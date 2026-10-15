@@ -12,6 +12,7 @@ import {
   buildHome,
   FLOOR,
   footprintOf,
+  H_OUT,
   pieceBoxes,
   seat,
   type BuiltHome,
@@ -23,14 +24,41 @@ import { Creatures } from "./creatures";
 
 export type IntroMode = "full" | "short";
 
-const TIMING: Record<IntroMode, { spin: number; roofStart: number; roofEnd: number; from: number; turns: number }> = {
-  full: { spin: 2.4, roofStart: 2.55, roofEnd: 3.35, from: 3.4, turns: -2.25 },
-  short: { spin: 0.8, roofStart: 0.75, roofEnd: 1.35, from: 1.25, turns: -0.18 },
+// `speed` scales the build schedule below; the house spins in while it builds.
+const TIMING: Record<IntroMode, { spin: number; speed: number; from: number; turns: number }> = {
+  full: { spin: 2.8, speed: 1, from: 1.5, turns: -1.25 },
+  short: { spin: 0.8, speed: 2.6, from: 1.1, turns: -0.18 },
 };
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
-const easeInCubic = (t: number) => t ** 3;
 const easeOutBack = (t: number) => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
+
+const POP = 0.4;
+
+// Floors sweep in from the far corner, walls rise course by course, then furniture pops up bottom-first.
+function buildSchedule(boxes: Box[]) {
+  let w = 1;
+  let d = 1;
+  for (const b of boxes) {
+    w = Math.max(w, b.x1);
+    d = Math.max(d, b.z1);
+  }
+  let total = 0;
+  const delays = Float32Array.from(boxes, (b) => {
+    const sweep = (b.x0 + b.x1 + b.z0 + b.z1) / 2 / (w + d);
+    const t =
+      b.piece !== undefined
+        ? 1.85 + sweep * 0.6 + b.y0 * 0.2
+        : b.y1 - b.y0 <= 0.12 && b.y0 < 0.4
+          ? sweep * 0.8
+          : 0.6 + sweep * 0.35 + (b.y0 / H_OUT) * 0.9;
+    total = Math.max(total, t + POP);
+    return t;
+  });
+  return { delays, total };
+}
+
+type Build = { delays: Float32Array; total: number };
 
 const dummy = new Object3D();
 const white = new Color("#ffffff");
@@ -44,8 +72,12 @@ function Boxes({
   onHover,
   onSelect,
   onGrab,
+  build,
+  clock,
 }: {
   boxes: Box[];
+  build?: Build;
+  clock?: RefObject<number>;
   highlight?: string | null;
   picked?: number | null;
   interactive?: boolean;
@@ -55,6 +87,7 @@ function Boxes({
 }) {
   const ref = useRef<InstancedMesh>(null);
 
+  const settled = useRef(false);
   useLayoutEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
@@ -66,7 +99,37 @@ function Boxes({
     });
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
+    settled.current = true;
   }, [boxes]);
+
+  useFrame(() => {
+    const mesh = ref.current;
+    const t = clock?.current ?? Infinity;
+    if (!mesh || !build || build.delays.length !== boxes.length) return;
+    if (t >= build.total && settled.current) return;
+    boxes.forEach((b, i) => {
+      const k = clamp01((t - build.delays[i]) / POP);
+      const w = b.x1 - b.x0;
+      const h = b.y1 - b.y0;
+      const d = b.z1 - b.z0;
+      if (k <= 0) {
+        dummy.scale.setScalar(1e-4);
+      } else if (b.piece === undefined && h > 0.12) {
+        const g = Math.min(1, k * 3);
+        dummy.scale.set(w * g, h * g, d * g);
+        dummy.position.set((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2 + (1 - easeOutCubic(k)) * 1.2, (b.z0 + b.z1) / 2);
+      } else {
+        const g = Math.max(0, easeOutBack(k));
+        dummy.scale.set(w * g, h * g, d * g);
+        dummy.position.set((b.x0 + b.x1) / 2, b.y0 + (h * g) / 2, (b.z0 + b.z1) / 2);
+      }
+      if (k <= 0) dummy.position.set((b.x0 + b.x1) / 2, b.y0, (b.z0 + b.z1) / 2);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    settled.current = t >= build.total;
+  });
 
   useLayoutEffect(() => {
     const mesh = ref.current;
@@ -195,6 +258,16 @@ function Dragging({
       </mesh>
     </group>
   );
+}
+
+// Rendered first so the build clock is updated before any Boxes reads it in the same frame.
+function Tick({ fn }: { fn: (now: number) => void }) {
+  const latest = useRef(fn);
+  useEffect(() => {
+    latest.current = fn;
+  });
+  useFrame((state) => latest.current(state.clock.elapsedTime));
+  return null;
 }
 
 function cameraDistance(extent: number, aspect: number) {
@@ -364,8 +437,11 @@ export function HouseScene({
   });
   const overlays = interactive && follow === null && !decorating;
   const houseRef = useRef<Group>(null);
-  const roofRef = useRef<Group>(null);
-  const anim = useRef({ start: -1, done: false, skip: false, run: -1, pop: -1, layout: layout.id });
+  const anim = useRef({ start: -1, built: -1, speed: 1, done: false, skip: false, run: -1, layout: layout.id });
+  const build = useMemo(() => buildSchedule(home.boxes), [home.boxes]);
+  const clock = useRef(0);
+  const [builtKey, setBuiltKey] = useState<string | null>(null);
+  const buildKey = `${introRun}:${layout.id}`;
   const extent = Math.max(home.width, home.depth);
   const { size } = useThree();
 
@@ -373,44 +449,38 @@ export function HouseScene({
     if (skipTick > 0) anim.current.skip = true;
   }, [skipTick]);
 
-  useFrame((state) => {
+  const tick = (now: number) => {
     const a = anim.current;
-    const now = state.clock.elapsedTime;
     if (a.run !== introRun) {
-      Object.assign(a, { run: introRun, start: now, done: false, skip: false, pop: -1, layout: layout.id });
+      Object.assign(a, { run: introRun, start: now, built: now, speed: TIMING[introMode].speed, done: false, skip: false });
+      a.layout = layout.id;
     }
     if (a.layout !== layout.id) {
-      a.layout = layout.id;
-      a.pop = now;
+      Object.assign(a, { layout: layout.id, built: now, speed: TIMING.short.speed });
     }
     const T = TIMING[introMode];
-    const t = a.skip ? T.roofEnd : now - a.start;
+    clock.current = a.skip ? Infinity : (now - a.built) * a.speed;
 
-    const e = easeOutCubic(clamp01(t / T.spin));
-    const pop = a.pop < 0 ? 1 : 0.55 + 0.45 * easeOutBack(clamp01((now - a.pop) / 0.6));
+    const e = a.skip ? 1 : easeOutCubic(clamp01((now - a.start) / T.spin));
     const house = houseRef.current;
     if (house) {
-      house.scale.setScalar((T.from + (1 - T.from) * e) * pop);
+      house.scale.setScalar(T.from + (1 - T.from) * e);
       house.rotation.y = T.turns * Math.PI * (1 - e);
     }
 
-    const r = clamp01((t - T.roofStart) / (T.roofEnd - T.roofStart));
-    if (roofRef.current) {
-      roofRef.current.position.y = easeInCubic(r) * 40;
-      roofRef.current.visible = r < 1;
-    }
-
-    if (!a.done && t >= T.roofEnd) {
+    if (clock.current >= build.total && builtKey !== buildKey && a.layout === layout.id) setBuiltKey(buildKey);
+    if (!a.done && clock.current >= build.total && e >= 1) {
       a.done = true;
       onIntroDone();
     }
-  });
+  };
 
   const label = hovered ?? selected;
   const labelRoom = home.rooms.find((r) => r.id === label);
 
   return (
     <>
+      <Tick fn={tick} />
       <color attach="background" args={[sky.bg]} />
       <CameraRig width={home.width} depth={home.depth} />
       <ambientLight intensity={sky.ambient} />
@@ -446,6 +516,8 @@ export function HouseScene({
           <Boxes
             key={layout.id}
             boxes={home.boxes}
+            build={build}
+            clock={clock}
             highlight={decorating ? null : label}
             picked={decorating ? picked : null}
             interactive={interactive}
@@ -475,11 +547,8 @@ export function HouseScene({
             />
           )}
 
-          <group ref={roofRef}>
-            <Boxes key={`roof-${layout.id}`} boxes={home.roof} />
-          </group>
 
-          {showCreatures && (
+          {showCreatures && builtKey === buildKey && (
             <Creatures
               home={home}
               catsRef={catsRef}

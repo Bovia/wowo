@@ -62,7 +62,6 @@ export type BuiltHome = {
   width: number;
   depth: number;
   boxes: Box[];
-  roof: Box[];
   nav: Nav;
   rooms: Room[];
   plan: Plan;
@@ -585,62 +584,11 @@ export function buildHome(layout: Layout, furniture?: Placement[], lifted?: numb
     width,
     depth,
     boxes: b.boxes,
-    roof: buildRoof(width, depth),
     nav: { res, cells },
     rooms: layout.rooms,
     plan,
     furniture,
   };
-}
-
-function buildRoof(width: number, depth: number): Box[] {
-  const b = new Builder();
-  const O = 0.35;
-  const s = 0.25;
-  const rise = 0.9 * s;
-  const z0 = -O;
-  const z1 = depth + O;
-  const mid = (z0 + z1) / 2;
-  const n = Math.ceil((mid - z0) / s);
-  const tiles = ["#c9674a", "#c9674a", "#bf5f43", "#d2714f", "#b95a40"];
-
-  for (let k = 0; k < n; k++) {
-    const y0 = H_OUT + k * rise;
-    const y1 = y0 + 0.22;
-    const fa = z0 + k * s;
-    const fb = Math.min(mid, fa + s);
-    const ba = Math.max(mid, z1 - (k + 1) * s);
-    const bb = z1 - k * s;
-    const off = (k % 2) * 0.25;
-    for (let x = -O - off; x < width + O; x += 0.5) {
-      const xa = Math.max(-O, x);
-      const xb = Math.min(width + O, x + 0.5);
-      b.add(xa + 0.01, y0, fa, xb - 0.01, y1, fb, pick(tiles, hash(x, k, 1)), 0.03);
-      b.add(xa + 0.01, y0, ba, xb - 0.01, y1, bb, pick(tiles, hash(x, k, 2)), 0.03);
-    }
-    const ga = Math.max(0, fb);
-    const gb = Math.min(depth, ba);
-    for (const gx of [0, width]) b.add(gx - T / 2, y0 - rise, ga, gx + T / 2, y0 + 0.01, gb, "#f5ecdc", 0.02);
-  }
-  const top = H_OUT + n * rise;
-  b.add(-O, top - 0.02, mid - 0.18, width + O, top + 0.1, mid + 0.18, "#9e4a35", 0.02);
-
-  for (const gx of [0, width]) {
-    const wy = H_OUT + 0.35;
-    b.add(gx - T / 2 - 0.02, wy - 0.05, mid - 0.4, gx + T / 2 + 0.02, wy + 0.65, mid + 0.4, "#fbf7ef", 0.01);
-    b.add(gx - T / 2 - 0.03, wy, mid - 0.33, gx + T / 2 + 0.03, wy + 0.58, mid + 0.33, "#bfe0ee", 0.02);
-    b.add(gx - T / 2 - 0.04, wy, mid - 0.02, gx + T / 2 + 0.04, wy + 0.58, mid + 0.02, "#fbf7ef", 0.01);
-  }
-
-  const cx = width * 0.72;
-  const cz = depth * 0.28;
-  const surface = H_OUT + ((cz - z0) / s) * rise + 0.22;
-  for (let k = 0; k < 5; k++) {
-    const y = surface - 0.4 + k * 0.26;
-    b.add(cx - 0.3, y, cz - 0.3, cx + 0.3, y + 0.26, cz + 0.3, k % 2 ? "#a8705a" : "#b57b63", 0.03);
-  }
-  b.add(cx - 0.36, surface + 0.9, cz - 0.36, cx + 0.36, surface + 0.98, cz + 0.36, "#7d5040", 0.02);
-  return b.boxes;
 }
 
 const STEPS: Cell[] = [

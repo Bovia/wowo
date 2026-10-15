@@ -330,7 +330,7 @@ export default function Wowo() {
           interactive={interactive}
           hovered={interactive ? hovered : null}
           selected={selected}
-          showCreatures={!decorating}
+          showCreatures={interactive && !decorating}
           furniture={furniture}
           decorating={decorating}
           picked={picked}
