@@ -7,6 +7,16 @@ import { Ambience, SOUND_FOR, SOUND_NAME, type Sound } from "@/lib/ambience";
 import { formatHour, nowHour, skyAt } from "@/lib/daylight";
 import { colorFor, itemsFor, loadInventory, newId, roomKey, saveInventory, type InvItem, type Inventory } from "@/lib/inventory";
 import { DEMOS, DEMO_ROOMS, TEMPLATES } from "@/lib/layouts";
+import {
+  capturePhoto,
+  captionFor,
+  loadAlbum,
+  renderPolaroid,
+  saveAlbum,
+  shutterSound,
+  stampFor,
+  type Snap,
+} from "@/lib/polaroid";
 import { scanToLayout, type Scan } from "@/lib/scan";
 import { CAT_NAMES } from "./creatures";
 import { HouseScene, type IntroMode } from "./house-scene";
@@ -147,6 +157,59 @@ export default function Wowo() {
 
   useEffect(() => () => ambience.stop(), [ambience]);
 
+  const glCanvas = useRef<HTMLCanvasElement | null>(null);
+  const [flash, setFlash] = useState(0);
+  useEffect(() => {
+    if (!flash) return;
+    const id = window.setTimeout(() => setFlash(0), 600);
+    return () => window.clearTimeout(id);
+  }, [flash]);
+  const [snap, setSnap] = useState<{ snap: Snap; fresh: boolean } | null>(null);
+  const [album, setAlbum] = useState<Snap[]>(loadAlbum);
+  const [albumOpen, setAlbumOpen] = useState(false);
+
+  const takePhoto = () => {
+    if (!glCanvas.current) return;
+    const photo = capturePhoto(glCanvas.current);
+    let running: { room: string; item: string } | undefined;
+    for (const r of layout.rooms) {
+      const it = itemsFor(inventory, layout, r.id).find((i) => i.warn);
+      if (it) {
+        running = { room: r.name, item: it.name };
+        break;
+      }
+    }
+    shutterSound();
+    setFlash(Date.now());
+    setAlbumOpen(false);
+    setSnap({
+      fresh: true,
+      snap: {
+        id: newId(),
+        photo,
+        at: Date.now(),
+        stamp: stampFor(hour),
+        caption: captionFor({
+          hour,
+          home: layout.demo ? layout.name : "我的窝",
+          cat: follow !== null ? CAT_NAMES[follow] : undefined,
+          room: selectedRoom?.name,
+          running,
+        }),
+      },
+    });
+  };
+
+  const keepSnap = (s: Snap) => {
+    setAlbum(saveAlbum([s, ...album.filter((a) => a.id !== s.id)]));
+    setSnap(null);
+  };
+
+  const dropSnap = (id: string) => {
+    setAlbum(saveAlbum(album.filter((a) => a.id !== id)));
+    setSnap(null);
+  };
+
   return (
     <div className={`wowo-bg relative h-dvh w-full overflow-hidden select-none ${night ? "is-night" : ""}`}>
       <Canvas
@@ -154,6 +217,10 @@ export default function Wowo() {
         flat
         dpr={[1, 2]}
         camera={{ position: [18, 26, 18], fov: 32 }}
+        gl={{ preserveDrawingBuffer: true }}
+        onCreated={({ gl }) => {
+          glCanvas.current = gl.domElement;
+        }}
         onPointerMissed={() => follow === null && setSelected(null)}
       >
         <HouseScene
@@ -253,7 +320,24 @@ export default function Wowo() {
               >
                 跟着猫走
               </button>
+              <button
+                onClick={takePhoto}
+                className="rounded-full bg-[#ff8a5b] px-3 py-1.5 text-sm font-semibold text-white shadow-[0_3px_0_#d9673d] transition active:translate-y-0.5 active:shadow-[0_1px_0_#d9673d]"
+              >
+                拍一张
+              </button>
             </div>
+            {album.length > 0 && (
+              <button
+                onClick={() => {
+                  setSnap(null);
+                  setAlbumOpen((o) => !o);
+                }}
+                className="ink-soft rounded-full px-3 py-1 text-xs text-[#8b6b55] transition hover:text-[#6b4a35]"
+              >
+                相册 · {album.length}
+              </button>
+            )}
             {clockOpen && (
               <div className="card-pop w-64 rounded-2xl bg-[#fffaf2]/95 p-3 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
                 <input
@@ -345,8 +429,148 @@ export default function Wowo() {
           {uploadOpen && (
             <UploadPanel onClose={() => setUploadOpen(false)} onChoose={chooseTemplate} onScan={chooseScan} />
           )}
+
+          {albumOpen && (
+            <Album
+              album={album}
+              onOpen={(s) => {
+                setAlbumOpen(false);
+                setSnap({ snap: s, fresh: false });
+              }}
+              onClose={() => setAlbumOpen(false)}
+            />
+          )}
+
+          {snap && (
+            <PolaroidCard
+              key={snap.snap.id}
+              snap={snap.snap}
+              fresh={snap.fresh}
+              onKeep={keepSnap}
+              onDrop={() => (snap.fresh ? setSnap(null) : dropSnap(snap.snap.id))}
+              onClose={() => setSnap(null)}
+            />
+          )}
         </>
       )}
+
+      {flash > 0 && <div key={flash} className="shutter-flash pointer-events-none absolute inset-0 bg-white" />}
+    </div>
+  );
+}
+
+function PolaroidCard({
+  snap,
+  fresh,
+  onKeep,
+  onDrop,
+  onClose,
+}: {
+  snap: Snap;
+  fresh: boolean;
+  onKeep: (s: Snap) => void;
+  onDrop: () => void;
+  onClose: () => void;
+}) {
+  const [caption, setCaption] = useState(snap.caption);
+  const [busy, setBusy] = useState(false);
+  const current = { ...snap, caption: caption.trim() || snap.caption };
+  const fileName = `窝窝-${new Date(snap.at).toISOString().slice(0, 10)}.png`;
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const url = URL.createObjectURL(await renderPolaroid(current));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const [canShare] = useState(() => typeof navigator.share === "function" && typeof navigator.canShare === "function");
+  const share = async () => {
+    setBusy(true);
+    try {
+      const file = new File([await renderPolaroid(current)], fileName, { type: "image/png" });
+      if (navigator.canShare({ files: [file] })) await navigator.share({ files: [file], text: current.caption });
+      else await download();
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") await download();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const btn = "rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50";
+
+  return (
+    <div className="fade-in absolute inset-0 grid place-items-center bg-[#6b4a35]/25 p-4 backdrop-blur-[2px]" onClick={onClose}>
+      <div className="flex flex-col items-center gap-5" onClick={(e) => e.stopPropagation()}>
+        <div className={`${fresh ? "polaroid-eject" : "card-pop"} w-[min(78vw,20rem)] -rotate-2 bg-[#fffdf8] p-3.5 pb-0 shadow-[0_20px_50px_rgba(60,40,25,0.35)]`}>
+          <div className="relative aspect-square overflow-hidden bg-[#2b2019]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={snap.photo} alt={current.caption} className={`h-full w-full ${fresh ? "polaroid-develop" : ""}`} />
+            <span className="photo-stamp absolute right-2.5 bottom-2 font-mono text-[11px] font-semibold">{snap.stamp}</span>
+          </div>
+          <input
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            maxLength={24}
+            aria-label="照片上的字"
+            className="polaroid-caption block w-full bg-transparent py-5 text-center text-xl text-[#5c3f2d] outline-none"
+          />
+        </div>
+        <p className="text-xs text-white/85">点照片下面的字可以改</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button onClick={onDrop} className={`${btn} bg-white/80 text-[#8b6b55]`}>
+            {fresh ? "不要了" : "删掉"}
+          </button>
+          <button onClick={download} disabled={busy} className={`${btn} bg-white/90 text-[#6b4a35]`}>
+            下载
+          </button>
+          {canShare && (
+            <button onClick={share} disabled={busy} className={`${btn} bg-white/90 text-[#6b4a35]`}>
+              分享
+            </button>
+          )}
+          <button onClick={() => onKeep(current)} className={`${btn} bg-[#6b4a35] text-white`}>
+            {fresh ? "收进相册" : "好了"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Album({ album, onOpen, onClose }: { album: Snap[]; onOpen: (s: Snap) => void; onClose: () => void }) {
+  return (
+    <div className="card-pop absolute top-28 right-5 w-[min(calc(100vw-2.5rem),22rem)] rounded-3xl bg-[#fffaf2]/95 p-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-bold text-[#6b4a35]">
+          窝窝相册<span className="ml-2 text-xs font-normal text-[#b39580]">最多留 12 张</span>
+        </h2>
+        <button onClick={onClose} aria-label="关闭" className="px-1 text-xl leading-none text-[#b39580] hover:text-[#6b4a35]">
+          ×
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {album.map((s, i) => (
+          <button
+            key={s.id}
+            onClick={() => onOpen(s)}
+            title={s.caption}
+            className="bg-white p-1 pb-3 shadow-[0_3px_8px_rgba(107,74,53,0.2)] transition hover:-translate-y-0.5"
+            style={{ rotate: `${((i * 37) % 7) - 3}deg` }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={s.photo} alt={s.caption} className="aspect-square w-full object-cover" />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

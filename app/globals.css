@@ -152,11 +152,63 @@ body {
   }
 }
 
+.shutter-flash {
+  animation: shutter-flash 0.55s ease-out forwards;
+}
+
+@keyframes shutter-flash {
+  from {
+    opacity: 0.95;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.polaroid-eject {
+  animation: polaroid-eject 0.7s cubic-bezier(0.2, 1.2, 0.4, 1) 0.15s both;
+}
+
+@keyframes polaroid-eject {
+  from {
+    opacity: 0;
+    transform: translateY(-40px) rotate(-8deg) scale(0.9);
+  }
+}
+
+.polaroid-develop {
+  animation: develop 3.2s ease-out 0.4s both;
+}
+
+@keyframes develop {
+  0% {
+    filter: brightness(0.15) sepia(0.9) saturate(0.4) blur(3px);
+  }
+  45% {
+    filter: brightness(0.75) sepia(0.6) saturate(0.7) blur(1px);
+  }
+  100% {
+    filter: none;
+  }
+}
+
+.photo-stamp {
+  color: rgb(255 138 60 / 0.95);
+  text-shadow: 0 0 4px rgb(255 120 40 / 0.6);
+  letter-spacing: 0.04em;
+}
+
+.polaroid-caption {
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", "Hiragino Mincho ProN", serif;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .plus-btn,
   .plus-pulse::after,
   .scan-line,
-  .room-alert {
+  .room-alert,
+  .polaroid-eject,
+  .polaroid-develop {
     animation: none;
   }
 }

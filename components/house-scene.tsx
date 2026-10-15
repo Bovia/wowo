@@ -322,6 +322,7 @@ export function HouseScene({
                   key={`alert-${layout.id}-${r.id}`}
                   position={[r.x + r.w / 2, 2.6, r.z + r.d / 2]}
                   center
+                  zIndexRange={[0, 0]}
                   style={{ pointerEvents: "none" }}
                 >
                   <div className="room-alert">{alerts[r.id]}</div>
@@ -332,6 +333,7 @@ export function HouseScene({
             <Html
               position={[labelRoom.x + labelRoom.w / 2, 2.8, labelRoom.z + labelRoom.d / 2]}
               center
+              zIndexRange={[0, 0]}
               style={{ pointerEvents: "none" }}
             >
               <div className="room-pill">
