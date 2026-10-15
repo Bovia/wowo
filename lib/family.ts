@@ -1,4 +1,4 @@
-export type HairStyle = "short" | "long" | "bun" | "buzz";
+export type HairStyle = "short" | "long" | "bun" | "buzz" | "beanie";
 export type Person = { name: string; hair: string; style: HairStyle; shirt: string; pants: string; skin: string };
 export type Coat = "cowBack" | "cowHead" | "orange" | "tabby" | "black" | "white" | "calico" | "blue";
 export type Cat = { id: string; name: string; coat: Coat };
@@ -12,6 +12,7 @@ export const HAIR_STYLES: { id: HairStyle; name: string }[] = [
   { id: "long", name: "长发" },
   { id: "bun", name: "丸子头" },
   { id: "buzz", name: "寸头" },
+  { id: "beanie", name: "毛线帽" },
 ];
 
 export const HAIR_COLORS = ["#2b2522", "#5a3a28", "#a0673e", "#d9b26f", "#9aa0a8", "#c25a5a"];
@@ -40,6 +41,10 @@ export const DEFAULT_FAMILY: Family = {
     { id: "sesame", name: "芝麻", coat: "cowHead" },
   ],
 };
+
+export const GUEST: Person = { name: "客人", hair: "#c9674a", style: "beanie", shirt: "#b9b4aa", pants: "#5b6f8f", skin: "#f1c9a5" };
+
+export const hasFamily = () => localStorage.getItem(KEY) !== null;
 
 export function loadFamily(): Family {
   try {

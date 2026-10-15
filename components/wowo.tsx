@@ -3,7 +3,8 @@
 import { Canvas } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { planOf, rotated, seat, type Layout, type Placement } from "@/lib/home";
-import { loadDecor, saveDecor } from "@/lib/decor";
+import { applySpots, loadDecor, saveDecor, toSpots } from "@/lib/decor";
+import { hasVisit, leaveVisit, readVisit, type HomeRef, type VisitCard } from "@/lib/visit";
 import { Ambience, SOUND_FOR, SOUND_NAME, type Sound } from "@/lib/ambience";
 import {
   applyEvent,
@@ -21,7 +22,7 @@ import {
 } from "@/lib/battery";
 import { formatHour, nowHour, skyAt } from "@/lib/daylight";
 import { colorFor, itemsFor, loadInventory, newId, roomKey, saveInventory, type InvItem, type Inventory } from "@/lib/inventory";
-import { loadFamily, saveFamily, type Family } from "@/lib/family";
+import { GUEST, hasFamily, loadFamily, saveFamily, type Family } from "@/lib/family";
 import { DEMOS, DEMO_ROOMS, TEMPLATES } from "@/lib/layouts";
 import {
   capturePhoto,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/polaroid";
 import { scanToLayout, type Scan } from "@/lib/scan";
 import { FamilyEditor } from "./family-editor";
+import { SharePanel } from "./share-panel";
 import { HouseScene, type IntroMode } from "./house-scene";
 
 const SEEN_KEY = "wowo:intro-seen";
@@ -66,6 +68,14 @@ const CAPTIONS: Record<string, string> = {
   demo2: "照着你给的户型图搭的。地台、落地窗、入户门都在，点点房间看看。",
 };
 
+const NO_ALERTS: Record<string, number> = {};
+
+function resolveHome(home: HomeRef): Layout | null {
+  if ("d" in home) return DEMOS.find((d) => d.id === home.d) ?? null;
+  if ("t" in home) return TEMPLATES.find((t) => t.id === home.t) ?? null;
+  return safeLayout(home.s);
+}
+
 export default function Wowo() {
   const [introMode, setIntroMode] = useState<IntroMode>(() =>
     localStorage.getItem(SEEN_KEY) ? "short" : "full",
@@ -82,7 +92,17 @@ export default function Wowo() {
   const [scan, setScan] = useState<Scan | null>(loadScan);
   const scanned = useMemo(() => safeLayout(scan), [scan]);
   const mine = scanned ?? TEMPLATES.find((t) => t.id === mineId) ?? null;
-  const layout = (view === "mine" && mine) || DEMOS.find((d) => d.id === view) || DEMOS[0];
+  const [knocking, setKnocking] = useState(hasVisit);
+  const [visit, setVisit] = useState<VisitCard | null>(null);
+  const visitLayout = useMemo(() => (visit ? resolveHome(visit.home) : null), [visit]);
+  const visiting = visit !== null && visitLayout !== null;
+  const [eye, setEye] = useState(false);
+  const [chrome, setChrome] = useState(true);
+  const [dest, setDest] = useState<{ x: number; z: number; n: number } | null>(null);
+  const [stepNote, setStepNote] = useState<string | null>(null);
+  const [visitor] = useState(() => (hasFamily() ? loadFamily().me : GUEST));
+  const homeLayout = (view === "mine" && mine) || DEMOS.find((d) => d.id === view) || DEMOS[0];
+  const layout = visitLayout ?? homeLayout;
   const views = [...DEMOS.map((d) => ({ id: d.id, name: d.name })), ...(mine ? [{ id: "mine", name: "我的窝" }] : [])];
   const interactive = phase === "home";
   const [touch] = useState(() => window.matchMedia("(pointer: coarse)").matches);
@@ -90,6 +110,50 @@ export default function Wowo() {
   useEffect(() => {
     document.body.style.cursor = interactive && hovered ? "pointer" : "";
   }, [interactive, hovered]);
+
+  useEffect(() => {
+    const knock = () => hasVisit() && setKnocking(true);
+    window.addEventListener("hashchange", knock);
+    return () => window.removeEventListener("hashchange", knock);
+  }, []);
+
+  useEffect(() => {
+    if (!knocking) return;
+    readVisit().then((card) => {
+      if (card && resolveHome(card.home)) {
+        setVisit(card);
+        setIntroMode("full");
+        setPhase("intro");
+        setIntroRun((n) => n + 1);
+      } else leaveVisit();
+      setKnocking(false);
+    });
+  }, [knocking]);
+
+  const goHome = () => {
+    leaveVisit();
+    setVisit(null);
+    setEye(false);
+    setFollow(null);
+    setSelected(null);
+    setHovered(null);
+    setCamFree(true);
+    setDest(null);
+    setStepNote(null);
+    setChrome(true);
+  };
+
+  const sendWalk = (x: number, z: number) => {
+    setDest({ x, z, n: Date.now() });
+    const room = layout.rooms.find((r) => x >= r.x && x <= r.x + r.w && z >= r.z && z <= r.z + r.d);
+    setStepNote(room ? `往${room.name}走` : "走过去");
+  };
+
+  useEffect(() => {
+    if (!stepNote) return;
+    const id = window.setTimeout(() => setStepNote(null), 1800);
+    return () => window.clearTimeout(id);
+  }, [stepNote]);
 
   const replay = () => {
     setSelected(null);
@@ -233,7 +297,7 @@ export default function Wowo() {
         stamp: stampFor(hour),
         caption: captionFor({
           hour,
-          home: layout.demo ? layout.name : "我的窝",
+          home: visiting ? `${visit.host}的窝` : layout.demo ? layout.name : "我的窝",
           cat: follow !== null ? catNames[follow] : undefined,
           room: selectedRoom?.name,
           running,
@@ -262,7 +326,17 @@ export default function Wowo() {
     justMoved.current = true;
     window.setTimeout(() => (justMoved.current = false), 300);
   };
-  const furniture = useMemo(() => (layout.id in decor ? decor[layout.id] : loadDecor(layout)), [decor, layout]);
+  const homeFurniture = useMemo(() => (layout.id in decor ? decor[layout.id] : loadDecor(layout)), [decor, layout]);
+  const visitFurniture = useMemo(() => (visit && visitLayout ? applySpots(visitLayout, visit.decor) : null), [visit, visitLayout]);
+  const furniture = visiting ? visitFurniture : homeFurniture;
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareCard = (host: string): VisitCard => ({
+    v: 1,
+    host,
+    home: layout.demo ? { d: layout.id } : scan ? { s: scan } : { t: mineId ?? layout.id },
+    decor: homeFurniture ? toSpots(homeFurniture) : null,
+    family,
+  });
   const setFurniture = (next: Placement[] | null) => {
     setDecor({ ...decor, [layout.id]: next });
     saveDecor(layout, next);
@@ -303,6 +377,13 @@ export default function Wowo() {
     setDecorNote(null);
   };
 
+  if (knocking)
+    return (
+      <div className="wowo-bg grid h-dvh w-full place-items-center">
+        <p className="ink-soft animate-pulse text-sm tracking-widest text-[#8b6b55]">咚咚咚，正在敲门…</p>
+      </div>
+    );
+
   return (
     <div className={`wowo-bg relative h-dvh w-full overflow-hidden select-none ${night ? "is-night" : ""}`}>
       <Canvas
@@ -316,10 +397,15 @@ export default function Wowo() {
         }}
         onPointerMissed={() => {
           if (decorating) return unpick();
-          setBatteryOpen(false);
-          setClockOpen(false);
-          setAlbumOpen(false);
+          if (batteryOpen || clockOpen || albumOpen || selected) {
+            setBatteryOpen(false);
+            setClockOpen(false);
+            setAlbumOpen(false);
+            if (follow === null) setSelected(null);
+            return;
+          }
           if (follow === null) setSelected(null);
+          setChrome((c) => !c);
         }}
       >
         <HouseScene
@@ -336,10 +422,14 @@ export default function Wowo() {
           picked={picked}
           onPick={pick}
           onPlace={place}
-          alerts={alerts}
+          alerts={visiting ? NO_ALERTS : alerts}
           hour={hour}
-          battery={level}
-          family={family}
+          battery={visiting ? 80 : level}
+          family={visiting ? visit.family : family}
+          visitor={visiting ? visitor : null}
+          eye={visiting && eye}
+          dest={dest}
+          onWalk={visiting ? sendWalk : undefined}
           follow={follow}
           camFree={camFree}
           onFollow={startFollow}
@@ -347,6 +437,7 @@ export default function Wowo() {
           onIntroDone={() => {
             localStorage.setItem(SEEN_KEY, "1");
             setPhase("home");
+            setChrome(true);
           }}
           onHover={setHovered}
           onSelect={setSelected}
@@ -358,7 +449,7 @@ export default function Wowo() {
           {introMode === "full" && (
             <div key={introRun} className="welcome pointer-events-none absolute inset-x-0 top-[14%] text-center">
               <p className="text-4xl font-extrabold tracking-[0.3em] text-[#6b4a35] sm:text-5xl">
-                欢迎来到窝窝
+                {visiting ? `欢迎来到${visit.host}的窝` : "欢迎来到窝窝"}
               </p>
             </div>
           )}
@@ -373,11 +464,20 @@ export default function Wowo() {
 
       {phase === "home" && (
         <>
-          <div className="fade-in pointer-events-none absolute inset-x-0 top-0 grid items-start gap-2 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:grid-cols-[1fr_auto] sm:grid-rows-[auto_1fr] sm:gap-x-4 sm:gap-y-3 sm:p-5">
+          <div
+            className={`fade-in pointer-events-none absolute inset-x-0 top-0 grid items-start gap-2 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:grid-cols-[1fr_auto] sm:grid-rows-[auto_1fr] sm:gap-x-4 sm:gap-y-3 sm:p-5 ${chrome && follow === null ? "" : "opacity-0"}`}
+          >
             <header
-              className={`flex items-center gap-3 transition-opacity sm:col-start-1 sm:row-start-1 ${follow !== null ? "opacity-0" : "pointer-events-auto"}`}
+              className={`flex items-center gap-3 sm:col-start-1 sm:row-start-1 ${chrome && follow === null ? "pointer-events-auto" : "pointer-events-none"}`}
             >
               <span className="ink text-2xl font-extrabold tracking-widest text-[#6b4a35]">窝窝</span>
+              {visiting ? (
+                <div className="rounded-full bg-white/70 px-3 py-1.5 text-sm shadow-sm backdrop-blur">
+                  <span className="text-[#6b4a35]">
+                    在<b>{visit.host}</b>家串门
+                  </span>
+                </div>
+              ) : (
               <div className="flex rounded-full bg-white/70 p-1 text-sm shadow-sm backdrop-blur">
                 {views.map((v) => (
                   <button
@@ -391,12 +491,14 @@ export default function Wowo() {
                   </button>
                 ))}
               </div>
+              )}
             </header>
 
             <div
-              className={`pointer-events-none flex min-w-0 flex-col items-stretch gap-2 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:items-end ${decorating ? "hidden" : ""}`}
+              className={`pointer-events-none flex min-w-0 flex-col items-stretch gap-2 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:items-end ${decorating || !chrome ? "hidden" : ""}`}
             >
             <div className="no-scrollbar pointer-events-auto -mx-4 -my-1 flex py-1 items-center gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:gap-2 sm:overflow-visible sm:px-0 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
+              {!visiting && (
               <button
                 onClick={() => {
                   setBatteryOpen((o) => !o);
@@ -409,6 +511,7 @@ export default function Wowo() {
                 <BatteryIcon level={level} />
                 {Math.round(level)}%
               </button>
+              )}
               <button
                 onClick={() => {
                   setClockOpen((o) => !o);
@@ -444,6 +547,8 @@ export default function Wowo() {
               >
                 拍一张
               </button>
+              {!visiting && (
+              <>
               <button
                 onClick={() => {
                   setFamilyOpen(true);
@@ -462,6 +567,20 @@ export default function Wowo() {
               >
                 装修
               </button>
+              <button
+                onClick={() => {
+                  setShareOpen(true);
+                  setSelected(null);
+                  setBatteryOpen(false);
+                  setClockOpen(false);
+                  setAlbumOpen(false);
+                }}
+                className="rounded-full bg-white/75 px-2.5 py-1.5 text-[13px] text-[#8b6b55] shadow-sm backdrop-blur transition hover:bg-white sm:px-3 sm:text-sm"
+              >
+                请人串门
+              </button>
+              </>
+              )}
               {album.length > 0 && (
                 <button
                   onClick={() => {
@@ -542,25 +661,79 @@ export default function Wowo() {
 
             <p
               className={`ink-soft max-w-[17rem] text-xs leading-relaxed text-[#8b6b55] transition-opacity sm:col-start-1 sm:row-start-2 sm:text-sm ${
-                follow !== null || decorating ? "opacity-0" : batteryOpen || clockOpen || albumOpen ? "max-sm:opacity-0" : ""
+                follow !== null || decorating || !chrome ? "opacity-0" : batteryOpen || clockOpen || albumOpen ? "max-sm:opacity-0" : ""
               }`}
             >
-              {layout.demo
+              {visiting
+                ? `你在${visit.host}家串门，只能看。点地板或下面的房间就能走过去。点空白处，按钮会收起来。`
+                : layout.demo
                 ? CAPTIONS[layout.id]
                 : "我理解的你家是这样的。不对也没关系，以后直接说一句「厨房在左边」就能改。"}
             </p>
           </div>
 
-          <p className="ink-soft fade-in pointer-events-none absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] text-center text-xs text-[#8b6b55]/60">
+          {stepNote && (
+            <div className="card-pop pointer-events-none absolute inset-x-0 top-[22%] z-10 mx-auto w-fit rounded-full bg-[#fffaf2]/95 px-4 py-1.5 text-sm font-semibold text-[#6b4a35] shadow-[0_8px_20px_rgba(107,74,53,0.16)]">
+              {stepNote}
+            </div>
+          )}
+
+          {visiting && (
+            <div className="pointer-events-auto absolute inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-10 mx-auto flex w-fit max-w-[min(40rem,calc(100%-1.5rem))] items-center gap-2">
+              <button
+                onClick={goHome}
+                className="shrink-0 rounded-full bg-[#6b4a35] px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm sm:text-sm"
+              >
+                离开
+              </button>
+              {chrome && follow === null && (
+                <div className="no-scrollbar flex min-w-0 justify-center gap-1.5 overflow-x-auto">
+                  {layout.rooms.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => sendWalk(r.x + r.w / 2, r.z + r.d / 2)}
+                      className="shrink-0 rounded-full bg-white/90 px-3 py-2 text-[13px] font-semibold text-[#6b4a35] shadow-sm backdrop-blur transition hover:bg-white"
+                    >
+                      {r.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  setFollow(null);
+                  setEye((v) => !v);
+                  setCamFree(false);
+                  setChrome(true);
+                }}
+                className="shrink-0 rounded-full bg-white/90 px-3.5 py-2 text-[13px] font-semibold text-[#6b4a35] shadow-sm backdrop-blur sm:text-sm"
+              >
+                {eye ? "看全屋" : "走进去"}
+              </button>
+            </div>
+          )}
+
+          {!chrome && follow === null && !decorating && !visiting && (
+            <p className="ink-soft pointer-events-none absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] text-center text-xs text-[#8b6b55]/45">
+              再点一下空白处，按钮会回来
+            </p>
+          )}
+
+          <p
+            className={`ink-soft fade-in pointer-events-none absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] text-center text-xs text-[#8b6b55]/60 ${chrome && !visiting ? "" : "opacity-0"}`}
+          >
             {decorating
               ? null
               : follow !== null
                 ? "镜头会跟着它溜达"
-                : touch ? "单指旋转 · 双指缩放 · 点房间或小猫看看" : "拖动旋转 · 滚轮缩放 · 点房间或小猫看看"}
+                : touch
+                  ? "单指旋转 · 双指缩放 · 点空白处收起按钮"
+                  : "拖动旋转 · 滚轮缩放 · 点空白处收起按钮"}
           </p>
 
+          {!visiting && (
           <div
-            className={`fade-in absolute right-6 bottom-20 flex items-center gap-3 transition-opacity sm:right-[12%] sm:bottom-[22%] ${follow !== null || decorating ? "pointer-events-none opacity-0" : ""}`}
+            className={`fade-in absolute right-6 bottom-20 flex items-center gap-3 transition-opacity sm:right-[12%] sm:bottom-[22%] ${follow !== null || decorating || !chrome ? "pointer-events-none opacity-0" : ""}`}
           >
             <span className="plus-label rounded-full bg-white/80 px-3 py-1.5 text-sm text-[#6b4a35] shadow-sm backdrop-blur">
               {mine ? "换一张户型图" : "上传你家的户型图"}
@@ -579,9 +752,10 @@ export default function Wowo() {
               <span className="absolute h-7 w-1.5 rounded-sm bg-white" />
             </button>
           </div>
+          )}
 
           {follow !== null && (
-            <div className="card-pop absolute inset-x-0 bottom-14 mx-auto flex w-fit items-center gap-2 rounded-full bg-[#fffaf2]/95 p-1.5 pl-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
+            <div className={`card-pop absolute inset-x-0 mx-auto flex w-fit items-center gap-2 rounded-full bg-[#fffaf2]/95 p-1.5 pl-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur ${visiting ? "bottom-24" : "bottom-14"}`}>
               <span className="text-sm text-[#6b4a35]">
                 正在跟着 <b>{catNames[follow]}</b>
               </span>
@@ -637,7 +811,7 @@ export default function Wowo() {
             </div>
           )}
 
-          {selectedRoom && (
+          {selectedRoom && !visiting && (
             <RoomCard
               key={`${layout.id}-${selectedRoom.id}`}
               name={selectedRoom.name}
@@ -650,6 +824,14 @@ export default function Wowo() {
 
           {uploadOpen && (
             <UploadPanel onClose={() => setUploadOpen(false)} onChoose={chooseTemplate} onScan={chooseScan} />
+          )}
+
+          {shareOpen && (
+            <SharePanel
+              defaultHost={family.me.name === "我" ? "" : family.me.name}
+              card={shareCard}
+              onClose={() => setShareOpen(false)}
+            />
           )}
 
           {familyOpen && <FamilyEditor family={family} onChange={updateFamily} onClose={() => setFamilyOpen(false)} />}

@@ -4,9 +4,9 @@ import { Html, OrbitControls, RoundedBox } from "@react-three/drei";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { EffectComposer, N8AO, SMAA } from "@react-three/postprocessing";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Color, Object3D, Plane, Vector3, type Group, type InstancedMesh, type Mesh, type MeshBasicMaterial, type MeshStandardMaterial } from "three";
+import { Color, Object3D, Plane, Raycaster, Vector3, type Group, type InstancedMesh, type Mesh, type MeshBasicMaterial, type MeshStandardMaterial } from "three";
 import { LOW } from "@/lib/battery";
-import type { Family } from "@/lib/family";
+import type { Family, Person } from "@/lib/family";
 import { skyAt, sunPosition } from "@/lib/daylight";
 import {
   buildHome,
@@ -20,7 +20,7 @@ import {
   type Layout,
   type Placement,
 } from "@/lib/home";
-import { Creatures } from "./creatures";
+import { Creatures, type Goal } from "./creatures";
 
 export type IntroMode = "full" | "short";
 
@@ -74,7 +74,9 @@ function Boxes({
   onGrab,
   build,
   clock,
+  name,
 }: {
+  name?: string;
   boxes: Box[];
   build?: Build;
   clock?: RefObject<number>;
@@ -82,7 +84,7 @@ function Boxes({
   picked?: number | null;
   interactive?: boolean;
   onHover?: (room: string | null) => void;
-  onSelect?: (room: string | null) => void;
+  onSelect?: (room: string | null, point?: Vector3) => void;
   onGrab?: (piece: number) => void;
 }) {
   const ref = useRef<InstancedMesh>(null);
@@ -150,6 +152,7 @@ function Boxes({
   return (
     <instancedMesh
       ref={ref}
+      name={name}
       args={[undefined, undefined, boxes.length]}
       castShadow
       receiveShadow
@@ -181,7 +184,7 @@ function Boxes({
           ? (e) => {
               e.stopPropagation();
               if (e.delta > 6) return;
-              onSelect?.(roomOf(e));
+              onSelect?.(roomOf(e), e.point);
             }
           : undefined
       }
@@ -261,6 +264,32 @@ function Dragging({
 }
 
 // Rendered first so the build clock is updated before any Boxes reads it in the same frame.
+function TapMark({ x, z, y, stamp }: { x: number; z: number; y: number; stamp: number }) {
+  const ring = useRef<Mesh>(null);
+  const disc = useRef<Mesh>(null);
+  useFrame(() => {
+    const t = (performance.now() - stamp) / 1000;
+    const k = Math.min(1, t / 1.35);
+    const ringMat = ring.current?.material as MeshBasicMaterial | undefined;
+    const discMat = disc.current?.material as MeshBasicMaterial | undefined;
+    if (ring.current) ring.current.scale.setScalar(0.55 + k * 1.1);
+    if (ringMat) ringMat.opacity = (1 - k) * 0.85;
+    if (discMat) discMat.opacity = Math.max(0, 0.55 - k * 0.25);
+  });
+  return (
+    <group position={[x, y + 0.06, z]}>
+      <mesh ref={disc} rotation-x={-Math.PI / 2}>
+        <circleGeometry args={[0.16, 24]} />
+        <meshBasicMaterial color="#ff8a5b" transparent opacity={0.55} depthWrite={false} />
+      </mesh>
+      <mesh ref={ring} rotation-x={-Math.PI / 2}>
+        <ringGeometry args={[0.14, 0.22, 28]} />
+        <meshBasicMaterial color="#ff8a5b" transparent opacity={0.85} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
 function Tick({ fn }: { fn: (now: number) => void }) {
   const latest = useRef(fn);
   useEffect(() => {
@@ -307,24 +336,37 @@ function CameraRig({ width, depth }: { width: number; depth: number }) {
   }, [camera, size.width, size.height, width, depth]);
   return null;
 }
+const HOUSE = "house-boxes";
 const camGoal = new Vector3();
+const head = new Vector3();
+const toCam = new Vector3();
+const blocker = new Raycaster();
+// Behind-the-shoulder first; if a wall is in the way, climb up and over it.
+const EYE_RIGS = [
+  [1.8, 3.5],
+  [1.2, 4.1],
+  [0.6, 4.7],
+  [0.15, 5.3],
+];
 const lookGoal = new Vector3();
 const catPos = new Vector3();
 
 function FollowCam({
   target,
   following,
+  eye,
   width,
   depth,
   onSettled,
 }: {
+  eye: boolean;
   target: RefObject<Group | null>;
   following: boolean;
   width: number;
   depth: number;
   onSettled: () => void;
 }) {
-  const { camera, size } = useThree();
+  const { camera, size, scene } = useThree();
   const look = useRef(new Vector3(0, 0.8, 0));
   const returning = useRef(false);
   const wasFollowing = useRef(false);
@@ -342,8 +384,19 @@ function FollowCam({
       const fx = Math.cos(h);
       const fz = -Math.sin(h);
       const zoom = Math.max(1, 0.9 / (size.width / size.height));
-      camGoal.set(catPos.x - fx * 5 * zoom, catPos.y + 6.5 * zoom, catPos.z - fz * 5 * zoom);
-      lookGoal.set(catPos.x + fx * 1.5, catPos.y, catPos.z + fz * 1.5);
+      const house = eye ? scene.getObjectByName(HOUSE) : undefined;
+      const rigs = house ? EYE_RIGS : [[5 * zoom, 6.5 * zoom]];
+      head.set(catPos.x, catPos.y + 1.5, catPos.z);
+      for (const [back, up] of rigs) {
+        camGoal.set(catPos.x - fx * back, catPos.y + up, catPos.z - fz * back);
+        if (!house) break;
+        toCam.subVectors(camGoal, head);
+        blocker.set(head, toCam.clone().normalize());
+        blocker.far = toCam.length();
+        if (!blocker.intersectObject(house, false).length) break;
+      }
+      const [ahead, lift] = eye ? [3.4, 0.15] : [1.5, 0];
+      lookGoal.set(catPos.x + fx * ahead, catPos.y + lift, catPos.z + fz * ahead);
     } else if (returning.current) {
       const { dir, dist } = framing(width, depth, size.width / size.height);
       camGoal.copy(dir).multiplyScalar(dist);
@@ -385,7 +438,15 @@ export function HouseScene({
   picked,
   onPick,
   onPlace,
+  visitor,
+  eye,
+  dest,
+  onWalk,
 }: {
+  dest: { x: number; z: number; n: number } | null;
+  onWalk?: (x: number, z: number) => void;
+  visitor: Person | null;
+  eye: boolean;
   furniture: Placement[] | null;
   decorating: boolean;
   picked: number | null;
@@ -432,8 +493,25 @@ export function HouseScene({
     !nestRoom ? sky.lamps : id === nestRoom.id ? Math.max(sky.lamps, 0.55) : sky.lamps * 0.3;
   const catsRef = useRef<(Group | null)[]>([]);
   const followRef = useRef<Group | null>(null);
+  const guestRef = useRef<Group | null>(null);
+  const guestGoal = useRef<Goal | null>(null);
+  const mark = useMemo(() => {
+    if (!dest || !visitor) return null;
+    const floor = home.plan.floors.find((f) => dest.x >= f.x0 && dest.x <= f.x1 && dest.z >= f.z0 && dest.z <= f.z1);
+    return { x: dest.x, z: dest.z, y: FLOOR + (floor?.elev ?? 0), n: dest.n };
+  }, [dest, visitor, home.plan.floors]);
+  const guest = useMemo(
+    () =>
+      visitor && {
+        person: visitor,
+        goal: () => guestGoal.current,
+        register: (g: Group | null) => (guestRef.current = g),
+      },
+    [visitor],
+  );
   useFrame(() => {
-    followRef.current = follow === null ? null : (catsRef.current[follow] ?? null);
+    followRef.current = follow !== null ? (catsRef.current[follow] ?? null) : eye ? guestRef.current : null;
+    if (dest && visitor) guestGoal.current = { x: dest.x, z: dest.z, spread: 0.18 };
   });
   const overlays = interactive && follow === null && !decorating;
   const houseRef = useRef<Group>(null);
@@ -509,12 +587,14 @@ export function HouseScene({
             smoothness={6}
             position={[home.width / 2, -0.35, home.depth / 2]}
             receiveShadow
+            raycast={() => {}}
           >
             <meshStandardMaterial color="#c99d76" roughness={0.95} />
           </RoundedBox>
 
           <Boxes
             key={layout.id}
+            name={HOUSE}
             boxes={home.boxes}
             build={build}
             clock={clock}
@@ -522,7 +602,10 @@ export function HouseScene({
             picked={decorating ? picked : null}
             interactive={interactive}
             onHover={onHover}
-            onSelect={onSelect}
+            onSelect={(room, point) => {
+              if (guest && point) onWalk?.(point.x + home.width / 2, point.z + home.depth / 2);
+              onSelect(room);
+            }}
             onGrab={
               decorating
                 ? (i) => {
@@ -556,6 +639,7 @@ export function HouseScene({
               nest={interactive ? nest : null}
               battery={battery}
               family={family}
+              visitor={guest}
             />
           )}
 
@@ -569,6 +653,8 @@ export function HouseScene({
               decay={1.6}
             />
           ))}
+
+          {mark && visitor && <TapMark key={mark.n} x={mark.x} z={mark.z} y={mark.y} stamp={mark.n} />}
 
           {overlays &&
             home.rooms
@@ -601,7 +687,7 @@ export function HouseScene({
         </group>
       </group>
 
-      <FollowCam target={followRef} following={follow !== null} width={home.width} depth={home.depth} onSettled={onCamSettled} />
+      <FollowCam target={followRef} following={follow !== null || eye} eye={follow === null && eye} width={home.width} depth={home.depth} onSettled={onCamSettled} />
 
       <OrbitControls
         makeDefault

@@ -90,7 +90,11 @@ export function personParts(p: Person): Part[] {
     { size: [0.04, 0.05, 0.04], pos: [0.165, 1.0, 0.07], color: BLACK },
     { size: [0.04, 0.05, 0.04], pos: [0.165, 1.0, -0.07], color: BLACK },
   ];
-  if (p.style === "buzz") {
+  if (p.style === "beanie") {
+    parts.push({ size: [0.36, 0.16, 0.36], pos: [0, 1.2, 0], color: p.hair });
+    parts.push({ size: [0.37, 0.06, 0.37], pos: [0, 1.12, 0], color: "#f3ead9" });
+    parts.push({ size: [0.11, 0.11, 0.11], pos: [0, 1.33, 0], color: "#f3ead9" });
+  } else if (p.style === "buzz") {
     parts.push({ size: [0.33, 0.05, 0.33], pos: [0, 1.16, 0], color: p.hair });
     parts.push({ size: [0.06, 0.18, 0.33], pos: [-0.14, 1.06, 0], color: p.hair });
   } else {
@@ -114,21 +118,31 @@ type WanderState = {
   phase: number;
   retarget: number;
   curl: number;
+  goal?: Goal;
 };
 
 export type Goal = { x: number; z: number; spread: number };
 
-function spawn(home: BuiltHome, idle: [number, number]): WanderState {
+function spawn(home: BuiltHome, idle: [number, number], start?: [number, number]): WanderState {
   const cells = [...home.nav.cells.keys()];
-  const [i, j] = cells[Math.floor(Math.random() * cells.length)].split(",").map(Number);
   const r = home.nav.res;
+  const gap = (k: string) => {
+    const [a, b] = k.split(",").map(Number);
+    return start ? Math.hypot((a + 0.5) * r - start[0], (b + 0.5) * r - start[1]) : 0;
+  };
+  const key = start
+    ? cells.reduce((best, k) => (gap(k) < gap(best) ? k : best))
+    : cells[Math.floor(Math.random() * cells.length)];
+  const [i, j] = key.split(",").map(Number);
   return {
     home,
     cell: [i, j],
     x: (i + 0.5) * r,
     z: (j + 0.5) * r,
     y: home.nav.cells.get(cellKey(i, j)) ?? 0,
-    heading: Math.random() * Math.PI * 2,
+    heading: start
+      ? Math.atan2(-(home.depth / 2 - (j + 0.5) * r), home.width / 2 - (i + 0.5) * r)
+      : Math.random() * Math.PI * 2,
     path: [],
     wait: Math.random() * idle[1],
     phase: Math.random() * 10,
@@ -144,10 +158,14 @@ function Wanderer({
   scale,
   goal,
   curl = [1, 1],
+  start,
+  still,
   register,
   onPick,
   children,
 }: {
+  start?: [number, number];
+  still?: boolean;
   home: BuiltHome;
   speed: number;
   idle: [number, number];
@@ -168,7 +186,7 @@ function Wanderer({
   useFrame((frame, dt) => {
     const g = ref.current;
     if (!g) return;
-    if (stateRef.current?.home !== home) stateRef.current = spawn(home, idle);
+    if (stateRef.current?.home !== home) stateRef.current = spawn(home, idle, start);
     const s = stateRef.current;
     const step = Math.min(dt, 0.05);
     let moving = false;
@@ -179,7 +197,9 @@ function Wanderer({
     if (target) {
       const end = s.path.at(-1) ?? s.cell;
       const off = Math.hypot((end[0] + 0.5) * r - target.x, (end[1] + 0.5) * r - target.z);
-      if ((s.retarget -= step) <= 0 && off > target.spread + 0.6) {
+      const fresh = still && (target.x !== s.goal?.x || target.z !== s.goal?.z);
+      s.goal = target;
+      if (fresh || ((s.retarget -= step) <= 0 && off > target.spread + 0.6)) {
         s.path = walkToward(home.nav, s.cell, target.x, target.z, target.spread);
         s.retarget = 1.2;
       }
@@ -205,7 +225,7 @@ function Wanderer({
         s.heading += delta * Math.min(1, step * 10);
         moving = true;
       }
-    } else if (!settled && (s.wait -= step) <= 0) {
+    } else if (!settled && !still && (s.wait -= step) <= 0) {
       s.path = randomWalk(home.nav, s.cell);
       if (!s.path.length) s.wait = idle[1];
     }
@@ -253,7 +273,9 @@ export function Creatures({
   nest,
   battery,
   family,
+  visitor,
 }: {
+  visitor?: { person: Person; goal: () => Goal | null; register: (g: Group | null) => void } | null;
   home: BuiltHome;
   catsRef: RefObject<(Group | null)[]>;
   onPickCat?: (i: number) => void;
@@ -267,6 +289,7 @@ export function Creatures({
     [family.me, family.partner],
   );
   const me = useRef<Group | null>(null);
+  const guest = useMemo(() => (visitor ? personParts(visitor.person) : null), [visitor]);
   const charging = nest !== null;
   const nearMe = (): Goal | null =>
     charging && me.current ? { x: me.current.position.x, z: me.current.position.z, spread: 0.7 } : null;
@@ -309,6 +332,20 @@ export function Creatures({
           )}
         </Wanderer>
       ))}
+      {visitor && guest && (
+        <Wanderer
+          home={home}
+          speed={1.6}
+          idle={PERSON_IDLE}
+          scale={1.3}
+          start={[home.width * 0.55, home.depth - 1.6]}
+          still
+          goal={visitor.goal}
+          register={visitor.register}
+        >
+          <Parts parts={guest} />
+        </Wanderer>
+      )}
     </>
   );
 }
