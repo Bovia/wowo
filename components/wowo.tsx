@@ -83,6 +83,7 @@ export default function Wowo() {
   const layout = (view === "mine" && mine) || DEMOS.find((d) => d.id === view) || DEMOS[0];
   const views = [...DEMOS.map((d) => ({ id: d.id, name: d.name })), ...(mine ? [{ id: "mine", name: "我的窝" }] : [])];
   const interactive = phase === "home";
+  const [touch] = useState(() => window.matchMedia("(pointer: coarse)").matches);
 
   useEffect(() => {
     document.body.style.cursor = interactive && hovered ? "pointer" : "";
@@ -251,7 +252,12 @@ export default function Wowo() {
         onCreated={({ gl }) => {
           glCanvas.current = gl.domElement;
         }}
-        onPointerMissed={() => follow === null && setSelected(null)}
+        onPointerMissed={() => {
+          setBatteryOpen(false);
+          setClockOpen(false);
+          setAlbumOpen(false);
+          if (follow === null) setSelected(null);
+        }}
       >
         <HouseScene
           layout={layout}
@@ -298,10 +304,10 @@ export default function Wowo() {
 
       {phase === "home" && (
         <>
-          <header
-            className={`fade-in absolute top-5 left-5 flex flex-col gap-3 transition-opacity ${follow !== null ? "pointer-events-none opacity-0" : ""}`}
-          >
-            <div className="flex items-center gap-3">
+          <div className="fade-in pointer-events-none absolute inset-x-0 top-0 grid items-start gap-2 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:grid-cols-[1fr_auto] sm:grid-rows-[auto_1fr] sm:gap-x-4 sm:gap-y-3 sm:p-5">
+            <header
+              className={`flex items-center gap-3 transition-opacity sm:col-start-1 sm:row-start-1 ${follow !== null ? "opacity-0" : "pointer-events-auto"}`}
+            >
               <span className="ink text-2xl font-extrabold tracking-widest text-[#6b4a35]">窝窝</span>
               <div className="flex rounded-full bg-white/70 p-1 text-sm shadow-sm backdrop-blur">
                 {views.map((v) => (
@@ -316,23 +322,18 @@ export default function Wowo() {
                   </button>
                 ))}
               </div>
-            </div>
-            <p className="ink-soft max-w-[17rem] text-sm leading-relaxed text-[#8b6b55]">
-              {layout.demo
-                ? CAPTIONS[layout.id]
-                : "我理解的你家是这样的。不对也没关系，以后直接说一句「厨房在左边」就能改。"}
-            </p>
-          </header>
+            </header>
 
-          <div className="fade-in absolute top-5 right-5 flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
+            <div className="pointer-events-none flex min-w-0 flex-col items-stretch gap-2 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:items-end">
+            <div className="no-scrollbar pointer-events-auto -mx-4 -my-1 flex py-1 items-center gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:gap-2 sm:overflow-visible sm:px-0 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
               <button
                 onClick={() => {
                   setBatteryOpen((o) => !o);
                   setClockOpen(false);
+                  setAlbumOpen(false);
                 }}
                 aria-label={`i 人电量 ${Math.round(level)}%`}
-                className="flex items-center gap-1.5 rounded-full bg-white/75 px-3 py-1.5 text-sm font-semibold text-[#6b4a35] shadow-sm backdrop-blur transition hover:bg-white"
+                className="flex items-center gap-1.5 rounded-full bg-white/75 px-2.5 py-1.5 text-[13px] sm:px-3 sm:text-sm font-semibold text-[#6b4a35] shadow-sm backdrop-blur transition hover:bg-white"
               >
                 <BatteryIcon level={level} />
                 {Math.round(level)}%
@@ -341,8 +342,9 @@ export default function Wowo() {
                 onClick={() => {
                   setClockOpen((o) => !o);
                   setBatteryOpen(false);
+                  setAlbumOpen(false);
                 }}
-                className="rounded-full bg-white/75 px-3 py-1.5 text-sm font-semibold text-[#6b4a35] shadow-sm backdrop-blur transition hover:bg-white"
+                className="rounded-full bg-white/75 px-2.5 py-1.5 text-[13px] sm:px-3 sm:text-sm font-semibold text-[#6b4a35] shadow-sm backdrop-blur transition hover:bg-white"
               >
                 {night ? "☾" : "☀"} {formatHour(hour)}
                 {hourOverride !== null && <span className="ml-1 text-xs font-normal text-[#ff8a5b]">调过</span>}
@@ -350,7 +352,7 @@ export default function Wowo() {
               <button
                 onClick={() => setSoundOn((s) => !s)}
                 aria-pressed={soundOn}
-                className={`rounded-full px-3 py-1.5 text-sm shadow-sm backdrop-blur transition ${
+                className={`rounded-full px-2.5 py-1.5 text-[13px] shadow-sm sm:px-3 sm:text-sm backdrop-blur transition ${
                   soundOn ? "bg-[#6b4a35] text-white" : "bg-white/75 text-[#8b6b55] hover:bg-white"
                 }`}
               >
@@ -359,7 +361,7 @@ export default function Wowo() {
               <button
                 onClick={() => (follow === null ? startFollow(0) : setFollow(null))}
                 aria-pressed={follow !== null}
-                className={`rounded-full px-3 py-1.5 text-sm shadow-sm backdrop-blur transition ${
+                className={`rounded-full px-2.5 py-1.5 text-[13px] shadow-sm sm:px-3 sm:text-sm backdrop-blur transition ${
                   follow !== null ? "bg-[#6b4a35] text-white" : "bg-white/75 text-[#8b6b55] hover:bg-white"
                 }`}
               >
@@ -367,10 +369,23 @@ export default function Wowo() {
               </button>
               <button
                 onClick={takePhoto}
-                className="rounded-full bg-[#ff8a5b] px-3 py-1.5 text-sm font-semibold text-white shadow-[0_3px_0_#d9673d] transition active:translate-y-0.5 active:shadow-[0_1px_0_#d9673d]"
+                className="rounded-full bg-[#ff8a5b] px-2.5 py-1.5 text-[13px] font-semibold sm:px-3 sm:text-sm text-white shadow-[0_3px_0_#d9673d] transition active:translate-y-0.5 active:shadow-[0_1px_0_#d9673d]"
               >
                 拍一张
               </button>
+              {album.length > 0 && (
+                <button
+                  onClick={() => {
+                    setSnap(null);
+                    setAlbumOpen((o) => !o);
+                    setBatteryOpen(false);
+                    setClockOpen(false);
+                  }}
+                  className="rounded-full bg-white/75 px-2.5 py-1.5 text-[13px] text-[#8b6b55] shadow-sm backdrop-blur sm:hidden"
+                >
+                  相册 {album.length}
+                </button>
+              )}
             </div>
             {batteryOpen && (
               <BatteryPanel
@@ -378,21 +393,21 @@ export default function Wowo() {
                 battery={battery}
                 onEvent={(label, delta) => updateBattery((b, t) => applyEvent(b, t, label, delta))}
                 onSet={(v) => updateBattery((b, t) => setLevel(b, t, v))}
+                onClose={() => setBatteryOpen(false)}
               />
             )}
-            {album.length > 0 && (
-              <button
-                onClick={() => {
-                  setSnap(null);
-                  setAlbumOpen((o) => !o);
+            {albumOpen && (
+              <Album
+                album={album}
+                onOpen={(s) => {
+                  setAlbumOpen(false);
+                  setSnap({ snap: s, fresh: false });
                 }}
-                className="ink-soft rounded-full px-3 py-1 text-xs text-[#8b6b55] transition hover:text-[#6b4a35]"
-              >
-                相册 · {album.length}
-              </button>
+                onClose={() => setAlbumOpen(false)}
+              />
             )}
             {clockOpen && (
-              <div className="card-pop w-64 rounded-2xl bg-[#fffaf2]/95 p-3 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
+              <div className="card-pop pointer-events-auto rounded-2xl bg-[#fffaf2]/95 p-3 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur sm:w-64">
                 <input
                   type="range"
                   min={0}
@@ -415,16 +430,40 @@ export default function Wowo() {
                 </div>
               </div>
             )}
-            <button
-              onClick={replay}
-              className="ink-soft rounded-full px-3 py-1 text-xs text-[#8b6b55]/70 transition hover:text-[#6b4a35]"
+            <div className="pointer-events-auto hidden items-center justify-end gap-1 sm:flex">
+              {album.length > 0 && (
+                <button
+                  onClick={() => {
+                    setSnap(null);
+                    setAlbumOpen((o) => !o);
+                  }}
+                  className="ink-soft rounded-full px-3 py-1 text-xs text-[#8b6b55] transition hover:text-[#6b4a35]"
+                >
+                  相册 · {album.length}
+                </button>
+              )}
+              <button
+                onClick={replay}
+                className="ink-soft rounded-full px-3 py-1 text-xs text-[#8b6b55]/70 transition hover:text-[#6b4a35]"
+              >
+                重播开场
+              </button>
+            </div>
+            </div>
+
+            <p
+              className={`ink-soft max-w-[17rem] text-xs leading-relaxed text-[#8b6b55] transition-opacity sm:col-start-1 sm:row-start-2 sm:text-sm ${
+                follow !== null ? "opacity-0" : batteryOpen || clockOpen || albumOpen ? "max-sm:opacity-0" : ""
+              }`}
             >
-              重播开场
-            </button>
+              {layout.demo
+                ? CAPTIONS[layout.id]
+                : "我理解的你家是这样的。不对也没关系，以后直接说一句「厨房在左边」就能改。"}
+            </p>
           </div>
 
-          <p className="ink-soft fade-in pointer-events-none absolute inset-x-0 bottom-6 text-center text-xs text-[#8b6b55]/60">
-            {follow === null ? "拖动旋转 · 滚轮或双指缩放 · 点房间或小猫看看" : "镜头会跟着它溜达"}
+          <p className="ink-soft fade-in pointer-events-none absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] text-center text-xs text-[#8b6b55]/60">
+            {follow !== null ? "镜头会跟着它溜达" : touch ? "单指旋转 · 双指缩放 · 点房间或小猫看看" : "拖动旋转 · 滚轮缩放 · 点房间或小猫看看"}
           </p>
 
           <div
@@ -483,17 +522,6 @@ export default function Wowo() {
             <UploadPanel onClose={() => setUploadOpen(false)} onChoose={chooseTemplate} onScan={chooseScan} />
           )}
 
-          {albumOpen && (
-            <Album
-              album={album}
-              onOpen={(s) => {
-                setAlbumOpen(false);
-                setSnap({ snap: s, fresh: false });
-              }}
-              onClose={() => setAlbumOpen(false)}
-            />
-          )}
-
           {snap && (
             <PolaroidCard
               key={snap.snap.id}
@@ -528,11 +556,13 @@ function BatteryPanel({
   battery,
   onEvent,
   onSet,
+  onClose,
 }: {
   level: number;
   battery: Battery;
   onEvent: (label: string, delta: number) => void;
   onSet: (level: number) => void;
+  onClose: () => void;
 }) {
   const today = new Date(battery.at).toDateString();
   const log = battery.log.filter((e) => new Date(e.at).toDateString() === today);
@@ -541,12 +571,15 @@ function BatteryPanel({
   const chip = "rounded-full px-2.5 py-1 text-xs font-semibold transition active:scale-95";
 
   return (
-    <div className="card-pop w-72 rounded-2xl bg-[#fffaf2]/95 p-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
-      <div className="flex items-baseline justify-between">
+    <div className="card-pop pointer-events-auto max-h-[70dvh] overflow-y-auto rounded-2xl bg-[#fffaf2]/95 p-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur sm:w-72">
+      <div className="flex items-baseline gap-2">
         <span className="text-sm font-bold text-[#6b4a35]">i 人电量</span>
-        <span className="text-2xl font-extrabold" style={{ color: batteryColor(level) }}>
+        <span className="ml-auto text-2xl font-extrabold" style={{ color: batteryColor(level) }}>
           {Math.round(level)}%
         </span>
+        <button onClick={onClose} aria-label="关闭" className="-mr-1 px-1 text-xl leading-none text-[#b39580] hover:text-[#6b4a35]">
+          ×
+        </button>
       </div>
       <p className="mt-1 text-sm text-[#8b6b55]">{moodFor(level)}</p>
       <input
@@ -679,7 +712,7 @@ function PolaroidCard({
 
 function Album({ album, onOpen, onClose }: { album: Snap[]; onOpen: (s: Snap) => void; onClose: () => void }) {
   return (
-    <div className="card-pop absolute top-28 right-5 w-[min(calc(100vw-2.5rem),22rem)] rounded-3xl bg-[#fffaf2]/95 p-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
+    <div className="card-pop pointer-events-auto max-h-[60dvh] overflow-y-auto rounded-3xl bg-[#fffaf2]/95 p-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur sm:w-[22rem]">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-bold text-[#6b4a35]">
           窝窝相册<span className="ml-2 text-xs font-normal text-[#b39580]">最多留 12 张</span>
@@ -751,7 +784,7 @@ function RoomCard({
   };
 
   const field =
-    "w-full rounded-xl border-2 border-[#efe1cc] bg-white px-3 py-1.5 text-sm text-[#6b4a35] outline-none placeholder:text-[#c4ab95] focus:border-[#ff8a5b]";
+    "w-full rounded-xl border-2 border-[#efe1cc] bg-white px-3 py-1.5 text-base text-[#6b4a35] outline-none sm:text-sm placeholder:text-[#c4ab95] focus:border-[#ff8a5b]";
   const chip = "rounded-full px-3 py-1 text-xs font-semibold transition";
 
   return (

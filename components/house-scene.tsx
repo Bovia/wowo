@@ -102,16 +102,39 @@ function cameraDistance(extent: number, aspect: number) {
   return extent * 2.2 * Math.max(1, 1.15 / aspect);
 }
 
-function CameraRig({ extent }: { extent: number }) {
-  const { camera, size } = useThree();
-  useEffect(() => {
-    camera.position.setLength(cameraDistance(extent, size.width / size.height));
-    camera.updateProjectionMatrix();
-  }, [camera, size.width, size.height, extent]);
-  return null;
+const DEFAULT_DIR = new Vector3(18, 26, 18).normalize();
+const PORTRAIT = 0.8;
+const HALF_FOV = Math.tan((32 * Math.PI) / 360);
+
+function framing(width: number, depth: number, aspect: number) {
+  const extent = Math.max(width, depth);
+  if (aspect >= PORTRAIT) return { dir: DEFAULT_DIR, dist: cameraDistance(extent, aspect) };
+  const az = width <= depth ? 0.5 : Math.PI / 2 - 0.5;
+  const elev = 0.98;
+  const dir = new Vector3(Math.sin(az) * Math.cos(elev), Math.sin(elev), Math.cos(az) * Math.cos(elev));
+  const w = width + 2.4;
+  const d = depth + 2.4;
+  const across = w * Math.cos(az) + d * Math.sin(az);
+  const along = (w * Math.sin(az) + d * Math.cos(az)) * Math.sin(elev) + 2.3 * Math.cos(elev);
+  const fit = Math.max(across / (2 * HALF_FOV * aspect), along / (2 * HALF_FOV));
+  return { dir, dist: fit * 1.05 + extent * 0.3 };
 }
 
-const DEFAULT_DIR = new Vector3(18, 26, 18).normalize();
+function CameraRig({ width, depth }: { width: number; depth: number }) {
+  const { camera, size } = useThree();
+  const portrait = useRef<boolean | null>(null);
+  useEffect(() => {
+    const aspect = size.width / size.height;
+    const { dir, dist } = framing(width, depth, aspect);
+    if (portrait.current !== aspect < PORTRAIT) {
+      portrait.current = aspect < PORTRAIT;
+      camera.position.copy(dir);
+    }
+    camera.position.setLength(dist);
+    camera.updateProjectionMatrix();
+  }, [camera, size.width, size.height, width, depth]);
+  return null;
+}
 const camGoal = new Vector3();
 const lookGoal = new Vector3();
 const catPos = new Vector3();
@@ -119,12 +142,14 @@ const catPos = new Vector3();
 function FollowCam({
   target,
   following,
-  extent,
+  width,
+  depth,
   onSettled,
 }: {
   target: RefObject<Group | null>;
   following: boolean;
-  extent: number;
+  width: number;
+  depth: number;
   onSettled: () => void;
 }) {
   const { camera, size } = useThree();
@@ -148,7 +173,8 @@ function FollowCam({
       camGoal.set(catPos.x - fx * 5 * zoom, catPos.y + 6.5 * zoom, catPos.z - fz * 5 * zoom);
       lookGoal.set(catPos.x + fx * 1.5, catPos.y, catPos.z + fz * 1.5);
     } else if (returning.current) {
-      camGoal.copy(DEFAULT_DIR).multiplyScalar(cameraDistance(extent, size.width / size.height));
+      const { dir, dist } = framing(width, depth, size.width / size.height);
+      camGoal.copy(dir).multiplyScalar(dist);
       lookGoal.set(0, 0.8, 0);
       if (camera.position.distanceTo(camGoal) < 0.15) {
         returning.current = false;
@@ -268,7 +294,7 @@ export function HouseScene({
   return (
     <>
       <color attach="background" args={[sky.bg]} />
-      <CameraRig extent={extent} />
+      <CameraRig width={home.width} depth={home.depth} />
       <ambientLight intensity={sky.ambient} />
       <hemisphereLight args={[sky.hemiSky, sky.hemiGround, sky.hemi]} />
       <directionalLight
@@ -364,7 +390,7 @@ export function HouseScene({
         </group>
       </group>
 
-      <FollowCam target={followRef} following={follow !== null} extent={extent} onSettled={onCamSettled} />
+      <FollowCam target={followRef} following={follow !== null} width={home.width} depth={home.depth} onSettled={onCamSettled} />
 
       <OrbitControls
         enabled={interactive && camFree}
@@ -375,7 +401,7 @@ export function HouseScene({
         minPolarAngle={0.35}
         maxPolarAngle={1.12}
         minDistance={extent * 0.8}
-        maxDistance={cameraDistance(extent, size.width / size.height) * 1.5}
+        maxDistance={framing(home.width, home.depth, size.width / size.height).dist * 1.5}
         target={[0, 0.8, 0]}
       />
 
