@@ -2,7 +2,8 @@
 
 import { Canvas } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { Layout } from "@/lib/home";
+import { planOf, rotated, seat, type Layout, type Placement } from "@/lib/home";
+import { loadDecor, saveDecor } from "@/lib/decor";
 import { Ambience, SOUND_FOR, SOUND_NAME, type Sound } from "@/lib/ambience";
 import {
   applyEvent,
@@ -122,6 +123,8 @@ export default function Wowo() {
   const switchView = (v: View) => {
     setView(v);
     setFollow(null);
+    setDecorating(false);
+    setPicked(null);
     setSelected(null);
     setHovered(null);
   };
@@ -250,6 +253,56 @@ export default function Wowo() {
     setSnap(null);
   };
 
+  const [decorating, setDecorating] = useState(false);
+  const [picked, setPicked] = useState<number | null>(null);
+  const [decor, setDecor] = useState<Record<string, Placement[] | null>>({});
+  const [decorNote, setDecorNote] = useState<string | null>(null);
+  const justMoved = useRef(false);
+  const markMoved = () => {
+    justMoved.current = true;
+    window.setTimeout(() => (justMoved.current = false), 300);
+  };
+  const furniture = useMemo(() => (layout.id in decor ? decor[layout.id] : loadDecor(layout)), [decor, layout]);
+  const setFurniture = (next: Placement[] | null) => {
+    setDecor({ ...decor, [layout.id]: next });
+    saveDecor(layout, next);
+  };
+  const place = (i: number, p: Placement) => {
+    const base = furniture ?? planOf(layout).furniture;
+    setFurniture(base.map((q, k) => (k === i ? p : q)));
+    setDecorNote(null);
+    markMoved();
+  };
+  const turnPicked = () => {
+    if (picked === null) return;
+    const base = furniture ?? planOf(layout).furniture;
+    const p = seat(planOf(layout), base, picked, rotated(base[picked]));
+    if (p) place(picked, p);
+    else setDecorNote("这儿转不开，先挪到宽敞点的地方");
+  };
+  const pick = (i: number | null) => {
+    setPicked(i);
+    markMoved();
+  };
+  const unpick = () => {
+    if (!justMoved.current) setPicked(null);
+  };
+  const startDecorating = () => {
+    setDecorating(true);
+    setFollow(null);
+    setSelected(null);
+    setHovered(null);
+    setBatteryOpen(false);
+    setClockOpen(false);
+    setAlbumOpen(false);
+    setSnap(null);
+  };
+  const stopDecorating = () => {
+    setDecorating(false);
+    setPicked(null);
+    setDecorNote(null);
+  };
+
   return (
     <div className={`wowo-bg relative h-dvh w-full overflow-hidden select-none ${night ? "is-night" : ""}`}>
       <Canvas
@@ -262,6 +315,7 @@ export default function Wowo() {
           glCanvas.current = gl.domElement;
         }}
         onPointerMissed={() => {
+          if (decorating) return unpick();
           setBatteryOpen(false);
           setClockOpen(false);
           setAlbumOpen(false);
@@ -276,7 +330,12 @@ export default function Wowo() {
           interactive={interactive}
           hovered={interactive ? hovered : null}
           selected={selected}
-          showCreatures
+          showCreatures={!decorating}
+          furniture={furniture}
+          decorating={decorating}
+          picked={picked}
+          onPick={pick}
+          onPlace={place}
           alerts={alerts}
           hour={hour}
           battery={level}
@@ -334,7 +393,9 @@ export default function Wowo() {
               </div>
             </header>
 
-            <div className="pointer-events-none flex min-w-0 flex-col items-stretch gap-2 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:items-end">
+            <div
+              className={`pointer-events-none flex min-w-0 flex-col items-stretch gap-2 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:items-end ${decorating ? "hidden" : ""}`}
+            >
             <div className="no-scrollbar pointer-events-auto -mx-4 -my-1 flex py-1 items-center gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:gap-2 sm:overflow-visible sm:px-0 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
               <button
                 onClick={() => {
@@ -394,6 +455,12 @@ export default function Wowo() {
                 className="rounded-full bg-white/75 px-2.5 py-1.5 text-[13px] text-[#8b6b55] shadow-sm backdrop-blur transition hover:bg-white sm:px-3 sm:text-sm"
               >
                 家里人
+              </button>
+              <button
+                onClick={startDecorating}
+                className="rounded-full bg-white/75 px-2.5 py-1.5 text-[13px] text-[#8b6b55] shadow-sm backdrop-blur transition hover:bg-white sm:px-3 sm:text-sm"
+              >
+                装修
               </button>
               {album.length > 0 && (
                 <button
@@ -475,7 +542,7 @@ export default function Wowo() {
 
             <p
               className={`ink-soft max-w-[17rem] text-xs leading-relaxed text-[#8b6b55] transition-opacity sm:col-start-1 sm:row-start-2 sm:text-sm ${
-                follow !== null ? "opacity-0" : batteryOpen || clockOpen || albumOpen ? "max-sm:opacity-0" : ""
+                follow !== null || decorating ? "opacity-0" : batteryOpen || clockOpen || albumOpen ? "max-sm:opacity-0" : ""
               }`}
             >
               {layout.demo
@@ -485,11 +552,15 @@ export default function Wowo() {
           </div>
 
           <p className="ink-soft fade-in pointer-events-none absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] text-center text-xs text-[#8b6b55]/60">
-            {follow !== null ? "镜头会跟着它溜达" : touch ? "单指旋转 · 双指缩放 · 点房间或小猫看看" : "拖动旋转 · 滚轮缩放 · 点房间或小猫看看"}
+            {decorating
+              ? null
+              : follow !== null
+                ? "镜头会跟着它溜达"
+                : touch ? "单指旋转 · 双指缩放 · 点房间或小猫看看" : "拖动旋转 · 滚轮缩放 · 点房间或小猫看看"}
           </p>
 
           <div
-            className={`fade-in absolute right-6 bottom-20 flex items-center gap-3 transition-opacity sm:right-[12%] sm:bottom-[22%] ${follow !== null ? "pointer-events-none opacity-0" : ""}`}
+            className={`fade-in absolute right-6 bottom-20 flex items-center gap-3 transition-opacity sm:right-[12%] sm:bottom-[22%] ${follow !== null || decorating ? "pointer-events-none opacity-0" : ""}`}
           >
             <span className="plus-label rounded-full bg-white/80 px-3 py-1.5 text-sm text-[#6b4a35] shadow-sm backdrop-blur">
               {mine ? "换一张户型图" : "上传你家的户型图"}
@@ -526,6 +597,43 @@ export default function Wowo() {
               >
                 下来吧
               </button>
+            </div>
+          )}
+
+          {decorating && (
+            <div className="card-pop absolute inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] mx-auto flex max-w-md flex-col gap-2 rounded-3xl bg-[#fffaf2]/95 p-3 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
+              <p className="px-1 text-center text-sm text-[#6b4a35]">
+                {decorNote ??
+                  (picked === null
+                    ? "按住家具，拖到想放的地方"
+                    : "绿色能放，红色放不下；松手就摆好")}
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  onClick={turnPicked}
+                  disabled={picked === null}
+                  className="rounded-full bg-[#f6ecdf] px-4 py-2 text-sm font-semibold text-[#8b6b55] transition hover:bg-[#efe1cc] disabled:opacity-40"
+                >
+                  ↻ 转个方向
+                </button>
+                <button
+                  onClick={() => {
+                    setFurniture(null);
+                    setPicked(null);
+                    setDecorNote("都摆回原来的位置了");
+                  }}
+                  disabled={!furniture}
+                  className="rounded-full bg-[#f6ecdf] px-4 py-2 text-sm font-semibold text-[#8b6b55] transition hover:bg-[#efe1cc] disabled:opacity-40"
+                >
+                  恢复原样
+                </button>
+                <button
+                  onClick={stopDecorating}
+                  className="rounded-full bg-[#6b4a35] px-5 py-2 text-sm font-semibold text-white"
+                >
+                  完成
+                </button>
+              </div>
             </div>
           )}
 

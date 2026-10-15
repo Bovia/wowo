@@ -51,6 +51,7 @@ export type Box = {
   z1: number;
   color: number;
   room: string | null;
+  piece?: number;
 };
 
 export type Cell = [number, number];
@@ -64,6 +65,8 @@ export type BuiltHome = {
   roof: Box[];
   nav: Nav;
   rooms: Room[];
+  plan: Plan;
+  furniture: Placement[];
 };
 
 export const FLOOR = 0.1;
@@ -93,8 +96,10 @@ function shade(hex: string, x: number, y: number, z: number, amount: number) {
 class Builder {
   boxes: Box[] = [];
   room: string | null = null;
-  at(room: string | null) {
+  piece: number | undefined;
+  at(room: string | null, piece?: number) {
     this.room = room;
+    this.piece = piece;
     return this;
   }
   add(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: string, jitter = 0.03) {
@@ -108,6 +113,7 @@ class Builder {
       z1,
       color: shade(color, x0 + x1, y0 + y1, z0 + z1, jitter),
       room: this.room,
+      ...(this.piece === undefined ? {} : { piece: this.piece }),
     });
   }
 }
@@ -315,6 +321,56 @@ function footprint(piece: Piece, side: Side, x: number, z: number): Rect {
   return side === "n" || side === "s" ? [x, z, x + piece.w, z + piece.d] : [x, z, x + piece.d, z + piece.w];
 }
 
+export const footprintOf = (p: Placement) => footprint(p.piece, p.side, p.x, p.z);
+
+const TURN: Record<Side, Side> = { n: "e", e: "s", s: "w", w: "n" };
+
+export function rotated(p: Placement): Placement {
+  const [x0, z0, x1, z1] = footprintOf(p);
+  const side = TURN[p.side];
+  const [fw, fd] = side === "n" || side === "s" ? [p.piece.w, p.piece.d] : [p.piece.d, p.piece.w];
+  return { ...p, side, x: (x0 + x1 - fw) / 2, z: (z0 + z1 - fd) / 2 };
+}
+
+const floorAt = (plan: Plan, x: number, z: number) =>
+  plan.floors.find((f) => x > f.x0 - 1e-6 && x < f.x1 + 1e-6 && z > f.z0 - 1e-6 && z < f.z1 + 1e-6);
+
+// Re-seats a moved piece: returns it with its new room and floor height, or null if it hits a wall, another piece, a step or the outside.
+export function seat(plan: Plan, furniture: Placement[], index: number, p: Placement): Placement | null {
+  const [x0, z0, x1, z1] = footprintOf(p);
+  const e = 0.02;
+  const probes: [number, number][] = [
+    [x0 + e, z0 + e],
+    [x1 - e, z0 + e],
+    [x0 + e, z1 - e],
+    [x1 - e, z1 - e],
+    [(x0 + x1) / 2, (z0 + z1) / 2],
+  ];
+  const floors = probes.map(([x, z]) => floorAt(plan, x, z));
+  if (floors.some((f) => !f)) return null;
+  const elev = floors[0]!.elev ?? 0;
+  if (floors.some((f) => (f!.elev ?? 0) !== elev)) return null;
+
+  for (const w of plan.walls) {
+    const g = geom(w);
+    const [c0, c1, a0, a1] = g.vertical ? [x0, x1, z0, z1] : [z0, z1, x0, x1];
+    if (c0 < g.line + T / 2 && c1 > g.line - T / 2 && a0 < g.s1 + T / 2 && a1 > g.s0 - T / 2) return null;
+  }
+  const mine = solidsOf(p);
+  for (const [i, o] of furniture.entries()) {
+    if (i === index) continue;
+    for (const [ox0, oz0, ox1, oz1] of solidsOf(o))
+      if (mine.some(([sx0, sz0, sx1, sz1]) => sx0 < ox1 - e && ox0 < sx1 - e && sz0 < oz1 - e && oz0 < sz1 - e)) return null;
+  }
+  return { ...p, room: floors[4]!.room, y: elev || undefined };
+}
+
+export function pieceBoxes(p: Placement): Box[] {
+  const b = new Builder();
+  renderPlacement(b, p, []);
+  return b.boxes;
+}
+
 function mapRect(piece: Piece, side: Side, x: number, z: number, [lx0, lz0, lx1, lz1]: Rect): Rect {
   const { w, d } = piece;
   switch (side) {
@@ -329,14 +385,17 @@ function mapRect(piece: Piece, side: Side, x: number, z: number, [lx0, lz0, lx1,
   }
 }
 
-function renderPlacement(b: Builder, p: Placement, solids: Rect[]) {
+const solidsOf = (p: Placement) =>
+  (p.piece.solids ?? [[0, 0, p.piece.w, p.piece.d] as Rect]).map((s) => mapRect(p.piece, p.side, p.x, p.z, s));
+
+function renderPlacement(b: Builder, p: Placement, solids: Rect[], index?: number) {
   const y = (p.y ?? 0) + FLOOR;
-  b.at(p.room);
+  b.at(p.room, index);
   for (const [x0, y0, z0, x1, y1, z1, color] of p.piece.boxes as LBox[]) {
     const [wx0, wz0, wx1, wz1] = mapRect(p.piece, p.side, p.x, p.z, [x0, z0, x1, z1]);
     b.add(wx0, y + y0, wz0, wx1, y + y1, wz1, color, 0.02);
   }
-  for (const s of p.piece.solids ?? [[0, 0, p.piece.w, p.piece.d] as Rect]) solids.push(mapRect(p.piece, p.side, p.x, p.z, s));
+  solids.push(...solidsOf(p));
 }
 
 export function openingZones(walls: WallSpec[]) {
@@ -470,8 +529,17 @@ function planFromGrid(layout: Layout): Plan {
   };
 }
 
-export function buildHome(layout: Layout): BuiltHome {
-  const plan = layout.plan ?? planFromGrid(layout);
+const plans = new WeakMap<Layout, Plan>();
+export function planOf(layout: Layout): Plan {
+  let plan = plans.get(layout);
+  if (!plan) plans.set(layout, (plan = layout.plan ?? planFromGrid(layout)));
+  return plan;
+}
+
+// `lifted` pieces are left out of the boxes (they're being dragged) but still block the nav grid.
+export function buildHome(layout: Layout, furniture?: Placement[], lifted?: number | null): BuiltHome {
+  const plan = planOf(layout);
+  furniture ??= plan.furniture;
   const kindOf = new Map(layout.rooms.map((r) => [r.id, r.kind]));
   const b = new Builder();
 
@@ -486,7 +554,10 @@ export function buildHome(layout: Layout): BuiltHome {
   renderWalls(b, plan.walls);
 
   const solids: Rect[] = [];
-  for (const p of plan.furniture) renderPlacement(b, p, solids);
+  furniture.forEach((p, i) => {
+    if (i === lifted) solids.push(...solidsOf(p));
+    else renderPlacement(b, p, solids, i);
+  });
 
   const res = 0.25;
   const cells = new Map<string, number>();
@@ -517,6 +588,8 @@ export function buildHome(layout: Layout): BuiltHome {
     roof: buildRoof(width, depth),
     nav: { res, cells },
     rooms: layout.rooms,
+    plan,
+    furniture,
   };
 }
 

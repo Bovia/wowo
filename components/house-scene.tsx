@@ -3,12 +3,22 @@
 import { Html, OrbitControls, RoundedBox } from "@react-three/drei";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { EffectComposer, N8AO, SMAA } from "@react-three/postprocessing";
-import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
-import { Color, Object3D, Vector3, type Group, type InstancedMesh } from "three";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Color, Object3D, Plane, Vector3, type Group, type InstancedMesh, type Mesh, type MeshBasicMaterial, type MeshStandardMaterial } from "three";
 import { LOW } from "@/lib/battery";
 import type { Family } from "@/lib/family";
 import { skyAt, sunPosition } from "@/lib/daylight";
-import { buildHome, type Box, type Layout } from "@/lib/home";
+import {
+  buildHome,
+  FLOOR,
+  footprintOf,
+  pieceBoxes,
+  seat,
+  type BuiltHome,
+  type Box,
+  type Layout,
+  type Placement,
+} from "@/lib/home";
 import { Creatures } from "./creatures";
 
 export type IntroMode = "full" | "short";
@@ -29,15 +39,19 @@ const tint = new Color();
 function Boxes({
   boxes,
   highlight,
+  picked,
   interactive,
   onHover,
   onSelect,
+  onGrab,
 }: {
   boxes: Box[];
   highlight?: string | null;
+  picked?: number | null;
   interactive?: boolean;
   onHover?: (room: string | null) => void;
   onSelect?: (room: string | null) => void;
+  onGrab?: (piece: number) => void;
 }) {
   const ref = useRef<InstancedMesh>(null);
 
@@ -60,13 +74,15 @@ function Boxes({
     boxes.forEach((b, i) => {
       tint.setHex(b.color);
       if (highlight && b.room === highlight) tint.lerp(white, 0.2);
+      if (picked != null && b.piece === picked) tint.lerp(white, 0.35);
       mesh.setColorAt(i, tint);
     });
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [boxes, highlight]);
+  }, [boxes, highlight, picked]);
 
   const roomOf = (e: ThreeEvent<PointerEvent | MouseEvent>) =>
     e.instanceId === undefined ? null : boxes[e.instanceId]?.room ?? null;
+  const pieceOf = (e: ThreeEvent<PointerEvent>) => (e.instanceId === undefined ? undefined : boxes[e.instanceId]?.piece);
 
   return (
     <instancedMesh
@@ -74,17 +90,31 @@ function Boxes({
       args={[undefined, undefined, boxes.length]}
       castShadow
       receiveShadow
-      onPointerMove={
-        interactive
+      onPointerDown={
+        onGrab
           ? (e) => {
+              const piece = pieceOf(e);
+              if (piece === undefined) return;
               e.stopPropagation();
-              onHover?.(roomOf(e));
+              onGrab(piece);
             }
           : undefined
       }
-      onPointerOut={interactive ? () => onHover?.(null) : undefined}
+      onPointerMove={
+        onGrab
+          ? (e) => {
+              document.body.style.cursor = pieceOf(e) === undefined ? "" : "grab";
+            }
+          : interactive
+            ? (e) => {
+                e.stopPropagation();
+                onHover?.(roomOf(e));
+              }
+            : undefined
+      }
+      onPointerOut={onGrab ? () => (document.body.style.cursor = "") : interactive ? () => onHover?.(null) : undefined}
       onClick={
-        interactive
+        interactive && !onGrab
           ? (e) => {
               e.stopPropagation();
               if (e.delta > 6) return;
@@ -96,6 +126,74 @@ function Boxes({
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial roughness={0.85} metalness={0} />
     </instancedMesh>
+  );
+}
+
+const SNAP = 0.05;
+const GOOD = new Color("#7fc48a");
+const BAD = new Color("#e36b5b");
+const BAD_TINT = new Color("#ffb0a3");
+const ground = new Plane(new Vector3(0, 1, 0), 0);
+const hit = new Vector3();
+
+function Dragging({
+  home,
+  index,
+  onDrop,
+}: {
+  home: BuiltHome;
+  index: number;
+  onDrop: (p: Placement | null) => void;
+}) {
+  const p = home.furniture[index];
+  const boxes = useMemo(() => pieceBoxes(p), [p]);
+  const [fx0, fz0, fx1, fz1] = footprintOf(p);
+  const group = useRef<Group>(null);
+  const pad = useRef<Mesh>(null);
+  const start = useRef<Vector3 | null>(null);
+  const spot = useRef<Placement | null>(null);
+  const drop = useRef(onDrop);
+  useEffect(() => {
+    drop.current = onDrop;
+  });
+
+  useEffect(() => {
+    document.body.style.cursor = "grabbing";
+    const up = () => drop.current(spot.current);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      document.body.style.cursor = "";
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, []);
+
+  useFrame(({ raycaster, pointer, camera }) => {
+    ground.constant = -(FLOOR + (p.y ?? 0));
+    raycaster.setFromCamera(pointer, camera);
+    if (!raycaster.ray.intersectPlane(ground, hit)) return;
+    if (!start.current) start.current = hit.clone();
+    const dx = Math.round((hit.x - start.current.x) / SNAP) * SNAP;
+    const dz = Math.round((hit.z - start.current.z) / SNAP) * SNAP;
+    const seated = seat(home.plan, home.furniture, index, { ...p, x: p.x + dx, z: p.z + dz });
+    spot.current = seated;
+    const lift = seated ? (seated.y ?? 0) - (p.y ?? 0) : 0;
+    group.current?.position.set(dx, lift + 0.06, dz);
+    const ok = seated ? GOOD : BAD;
+    (pad.current?.material as MeshBasicMaterial | undefined)?.color.copy(ok);
+    const body = group.current?.children[0] as InstancedMesh | undefined;
+    (body?.material as MeshStandardMaterial | undefined)?.color.copy(seated ? white : BAD_TINT);
+  });
+
+  return (
+    <group ref={group}>
+      <Boxes boxes={boxes} />
+      <mesh ref={pad} rotation-x={-Math.PI / 2} position={[(fx0 + fx1) / 2, FLOOR + (p.y ?? 0) - 0.04, (fz0 + fz1) / 2]}>
+        <planeGeometry args={[fx1 - fx0 + 0.1, fz1 - fz0 + 0.1]} />
+        <meshBasicMaterial transparent opacity={0.6} depthWrite={false} />
+      </mesh>
+    </group>
   );
 }
 
@@ -209,7 +307,17 @@ export function HouseScene({
   onIntroDone,
   onHover,
   onSelect,
+  furniture,
+  decorating,
+  picked,
+  onPick,
+  onPlace,
 }: {
+  furniture: Placement[] | null;
+  decorating: boolean;
+  picked: number | null;
+  onPick: (piece: number | null) => void;
+  onPlace: (piece: number, p: Placement) => void;
   alerts: Record<string, number>;
   hour: number;
   battery: number;
@@ -230,7 +338,14 @@ export function HouseScene({
   onHover: (room: string | null) => void;
   onSelect: (room: string | null) => void;
 }) {
-  const home = useMemo(() => buildHome(layout), [layout]);
+  const [lifted, setLifted] = useState<number | null>(null);
+  const dragging = decorating ? lifted : null;
+  const home = useMemo(() => buildHome(layout, furniture ?? undefined, dragging), [layout, furniture, dragging]);
+  const getState = useThree((s) => s.get);
+  const setOrbit = (on: boolean) => {
+    const c = getState().controls as unknown as { enabled: boolean } | null;
+    if (c) c.enabled = on;
+  };
   const sky = useMemo(() => skyAt(hour), [hour]);
   const nestRoom =
     battery < LOW
@@ -247,7 +362,7 @@ export function HouseScene({
   useFrame(() => {
     followRef.current = follow === null ? null : (catsRef.current[follow] ?? null);
   });
-  const overlays = interactive && follow === null;
+  const overlays = interactive && follow === null && !decorating;
   const houseRef = useRef<Group>(null);
   const roofRef = useRef<Group>(null);
   const anim = useRef({ start: -1, done: false, skip: false, run: -1, pop: -1, layout: layout.id });
@@ -331,11 +446,34 @@ export function HouseScene({
           <Boxes
             key={layout.id}
             boxes={home.boxes}
-            highlight={label}
+            highlight={decorating ? null : label}
+            picked={decorating ? picked : null}
             interactive={interactive}
             onHover={onHover}
             onSelect={onSelect}
+            onGrab={
+              decorating
+                ? (i) => {
+                    setOrbit(false);
+                    onPick(i);
+                    setLifted(i);
+                  }
+                : undefined
+            }
           />
+
+          {dragging !== null && (
+            <Dragging
+              key={dragging}
+              home={home}
+              index={dragging}
+              onDrop={(p) => {
+                setLifted(null);
+                setOrbit(true);
+                if (p) onPlace(dragging, p);
+              }}
+            />
+          )}
 
           <group ref={roofRef}>
             <Boxes key={`roof-${layout.id}`} boxes={home.roof} />
@@ -397,7 +535,8 @@ export function HouseScene({
       <FollowCam target={followRef} following={follow !== null} width={home.width} depth={home.depth} onSettled={onCamSettled} />
 
       <OrbitControls
-        enabled={interactive && camFree}
+        makeDefault
+        enabled={interactive && camFree && dragging === null}
         enablePan={false}
         enableDamping
         dampingFactor={0.08}
