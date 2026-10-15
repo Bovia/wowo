@@ -5,6 +5,7 @@ import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { EffectComposer, N8AO, SMAA } from "@react-three/postprocessing";
 import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { Color, Object3D, Vector3, type Group, type InstancedMesh } from "three";
+import { LOW } from "@/lib/battery";
 import { skyAt, sunPosition } from "@/lib/daylight";
 import { buildHome, type Box, type Layout } from "@/lib/home";
 import { Creatures } from "./creatures";
@@ -172,6 +173,7 @@ export function HouseScene({
   showCreatures,
   alerts,
   hour,
+  battery,
   follow,
   camFree,
   onFollow,
@@ -182,6 +184,7 @@ export function HouseScene({
 }: {
   alerts: Record<string, number>;
   hour: number;
+  battery: number;
   follow: number | null;
   camFree: boolean;
   onFollow: (cat: number) => void;
@@ -200,6 +203,16 @@ export function HouseScene({
 }) {
   const home = useMemo(() => buildHome(layout), [layout]);
   const sky = useMemo(() => skyAt(hour), [hour]);
+  const nestRoom =
+    battery < LOW
+      ? (home.rooms.find((r) => r.kind === "bedroom") ?? home.rooms.find((r) => r.kind === "living") ?? home.rooms[0])
+      : null;
+  const nest = useMemo(
+    () => (nestRoom ? { x: nestRoom.x + nestRoom.w / 2, z: nestRoom.z + nestRoom.d / 2 } : null),
+    [nestRoom],
+  );
+  const lampLevel = (id: string) =>
+    !nestRoom ? sky.lamps : id === nestRoom.id ? Math.max(sky.lamps, 0.55) : sky.lamps * 0.3;
   const catsRef = useRef<(Group | null)[]>([]);
   const followRef = useRef<Group | null>(null);
   useFrame(() => {
@@ -300,15 +313,21 @@ export function HouseScene({
           </group>
 
           {showCreatures && (
-            <Creatures home={home} catsRef={catsRef} onPickCat={interactive ? onFollow : undefined} />
+            <Creatures
+              home={home}
+              catsRef={catsRef}
+              onPickCat={interactive ? onFollow : undefined}
+              nest={interactive ? nest : null}
+              battery={battery}
+            />
           )}
 
           {home.rooms.map((r) => (
             <pointLight
               key={`lamp-${layout.id}-${r.id}`}
               position={[r.x + r.w / 2, 1.9, r.z + r.d / 2]}
-              color="#ffc27a"
-              intensity={sky.lamps * (3 + Math.min(r.w, r.d) * 1.6)}
+              color={r.id === nestRoom?.id ? "#ffad5c" : "#ffc27a"}
+              intensity={lampLevel(r.id) * (3 + Math.min(r.w, r.d) * 1.6)}
               distance={Math.max(r.w, r.d) * 1.1 + 1}
               decay={1.6}
             />

@@ -1,9 +1,10 @@
 "use client";
 
+import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, type ReactNode, type RefObject } from "react";
 import type { Group } from "three";
-import { cellKey, FLOOR, randomWalk, type BuiltHome, type Cell } from "@/lib/home";
+import { cellKey, FLOOR, randomWalk, walkToward, type BuiltHome, type Cell } from "@/lib/home";
 
 type Part = { size: [number, number, number]; pos: [number, number, number]; color: string };
 
@@ -74,7 +75,11 @@ type WanderState = {
   path: Cell[];
   wait: number;
   phase: number;
+  retarget: number;
+  curl: number;
 };
+
+export type Goal = { x: number; z: number; spread: number };
 
 function spawn(home: BuiltHome, idle: [number, number]): WanderState {
   const cells = [...home.nav.cells.keys()];
@@ -90,6 +95,8 @@ function spawn(home: BuiltHome, idle: [number, number]): WanderState {
     path: [],
     wait: Math.random() * idle[1],
     phase: Math.random() * 10,
+    retarget: 0,
+    curl: 0,
   };
 }
 
@@ -98,6 +105,8 @@ function Wanderer({
   speed,
   idle,
   scale,
+  goal,
+  curl = [1, 1],
   register,
   onPick,
   children,
@@ -106,6 +115,8 @@ function Wanderer({
   speed: number;
   idle: [number, number];
   scale: number;
+  goal?: () => Goal | null;
+  curl?: [number, number];
   register?: (g: Group | null) => void;
   onPick?: () => void;
   children: ReactNode;
@@ -124,10 +135,23 @@ function Wanderer({
     const s = stateRef.current;
     const step = Math.min(dt, 0.05);
     let moving = false;
+    const r = home.nav.res;
+    const target = goal?.() ?? null;
+    let settled = false;
+
+    if (target) {
+      const end = s.path.at(-1) ?? s.cell;
+      const off = Math.hypot((end[0] + 0.5) * r - target.x, (end[1] + 0.5) * r - target.z);
+      if ((s.retarget -= step) <= 0 && off > target.spread + 0.6) {
+        s.path = walkToward(home.nav, s.cell, target.x, target.z, target.spread);
+        s.retarget = 1.2;
+      }
+      settled = !s.path.length;
+      if (settled) s.wait = Math.max(s.wait, 0.5);
+    }
 
     if (s.path.length) {
       const [ti, tj] = s.path[0];
-      const r = home.nav.res;
       const dx = (ti + 0.5) * r - s.x;
       const dz = (tj + 0.5) * r - s.z;
       const dist = Math.hypot(dx, dz);
@@ -138,23 +162,29 @@ function Wanderer({
         const move = Math.min(dist, speed * step);
         s.x += (dx / dist) * move;
         s.z += (dz / dist) * move;
-        const target = Math.atan2(-dz, dx);
-        let delta = target - s.heading;
+        const facing = Math.atan2(-dz, dx);
+        let delta = facing - s.heading;
         delta = Math.atan2(Math.sin(delta), Math.cos(delta));
         s.heading += delta * Math.min(1, step * 10);
         moving = true;
       }
-    } else if ((s.wait -= step) <= 0) {
+    } else if (!settled && (s.wait -= step) <= 0) {
       s.path = randomWalk(home.nav, s.cell);
       if (!s.path.length) s.wait = idle[1];
     }
 
     const elev = home.nav.cells.get(cellKey(s.path[0]?.[0] ?? s.cell[0], s.path[0]?.[1] ?? s.cell[1])) ?? 0;
     s.y += (elev - s.y) * Math.min(1, step * 12);
+    s.curl += ((settled ? 1 : 0) - s.curl) * Math.min(1, step * 3);
     const t = frame.clock.elapsedTime + s.phase;
+    const breathe = moving ? 1 : 1 + Math.sin(t * (settled ? 1.2 : 2.2)) * 0.025;
     g.position.set(s.x, FLOOR + s.y + (moving ? Math.abs(Math.sin(t * 11)) * 0.06 : 0), s.z);
     g.rotation.y = s.heading;
-    g.scale.set(scale, scale * (moving ? 1 : 1 + Math.sin(t * 2.2) * 0.025), scale);
+    g.scale.set(
+      scale * (1 + (curl[0] - 1) * s.curl),
+      scale * (1 + (curl[1] - 1) * s.curl) * breathe,
+      scale * (1 + (curl[0] - 1) * s.curl),
+    );
   });
 
   return (
@@ -185,16 +215,25 @@ export function Creatures({
   home,
   catsRef,
   onPickCat,
+  nest,
+  battery,
 }: {
   home: BuiltHome;
   catsRef: RefObject<(Group | null)[]>;
   onPickCat?: (i: number) => void;
+  nest: { x: number; z: number } | null;
+  battery: number;
 }) {
   const cats = useMemo(() => [catParts("back"), catParts("head")], []);
   const people = useMemo(
     () => [personParts("#4f7cac", "#2b2522", false), personParts("#e59a8c", "#3a2a22", true)],
     [],
   );
+  const me = useRef<Group | null>(null);
+  const charging = nest !== null;
+  const nearMe = (): Goal | null =>
+    charging && me.current ? { x: me.current.position.x, z: me.current.position.z, spread: 0.7 } : null;
+
   return (
     <>
       {cats.map((parts, i) => (
@@ -204,6 +243,8 @@ export function Creatures({
           speed={1.4}
           idle={CAT_IDLE}
           scale={0.9}
+          goal={nearMe}
+          curl={[1.08, 0.72]}
           register={(g) => (catsRef.current[i] = g)}
           onPick={onPickCat && (() => onPickCat(i))}
         >
@@ -211,8 +252,24 @@ export function Creatures({
         </Wanderer>
       ))}
       {people.map((parts, i) => (
-        <Wanderer key={`p${i}`} home={home} speed={1.0} idle={PERSON_IDLE} scale={1.3}>
+        <Wanderer
+          key={`p${i}`}
+          home={home}
+          speed={i === 0 && battery < 50 ? 0.7 : 1.0}
+          idle={PERSON_IDLE}
+          scale={1.3}
+          goal={i === 0 && nest ? () => ({ ...nest, spread: 0.25 }) : undefined}
+          curl={[1, 0.74]}
+          register={i === 0 ? (g) => (me.current = g) : undefined}
+        >
           <Parts parts={parts} />
+          {i === 0 && charging && (
+            <Html position={[0, 1.55, 0]} center zIndexRange={[0, 0]} style={{ pointerEvents: "none" }}>
+              <div className="charge-bubble">
+                <span className="charge-bolt">⚡</span> 充电中 {Math.round(battery)}%
+              </div>
+            </Html>
+          )}
         </Wanderer>
       ))}
     </>

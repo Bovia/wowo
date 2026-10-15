@@ -4,6 +4,20 @@ import { Canvas } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Layout } from "@/lib/home";
 import { Ambience, SOUND_FOR, SOUND_NAME, type Sound } from "@/lib/ambience";
+import {
+  applyEvent,
+  batteryColor,
+  CHARGES,
+  DRAINS,
+  hoursToFull,
+  levelAt,
+  loadBattery,
+  LOW,
+  moodFor,
+  saveBattery,
+  setLevel,
+  type Battery,
+} from "@/lib/battery";
 import { formatHour, nowHour, skyAt } from "@/lib/daylight";
 import { colorFor, itemsFor, loadInventory, newId, roomKey, saveInventory, type InvItem, type Inventory } from "@/lib/inventory";
 import { DEMOS, DEMO_ROOMS, TEMPLATES } from "@/lib/layouts";
@@ -132,10 +146,25 @@ export default function Wowo() {
   const hour = hourOverride ?? realHour;
   const night = skyAt(hour).night;
 
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = window.setInterval(() => setRealHour(nowHour()), 30_000);
+    const id = window.setInterval(() => {
+      setRealHour(nowHour());
+      setNow(Date.now());
+    }, 30_000);
     return () => window.clearInterval(id);
   }, []);
+
+  const [battery, setBattery] = useState<Battery>(loadBattery);
+  const [batteryOpen, setBatteryOpen] = useState(false);
+  const level = levelAt(battery, now);
+  const updateBattery = (next: (b: Battery, t: number) => Battery) => {
+    const t = Date.now();
+    const b = next(battery, t);
+    setNow(t);
+    setBattery(b);
+    saveBattery(b);
+  };
 
   const [follow, setFollow] = useState<number | null>(null);
   const [camFree, setCamFree] = useState(true);
@@ -195,6 +224,7 @@ export default function Wowo() {
           cat: follow !== null ? CAT_NAMES[follow] : undefined,
           room: selectedRoom?.name,
           running,
+          charging: level < LOW,
         }),
       },
     });
@@ -234,6 +264,7 @@ export default function Wowo() {
           showCreatures
           alerts={alerts}
           hour={hour}
+          battery={level}
           follow={follow}
           camFree={camFree}
           onFollow={startFollow}
@@ -296,7 +327,21 @@ export default function Wowo() {
           <div className="fade-in absolute top-5 right-5 flex flex-col items-end gap-2">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setClockOpen((o) => !o)}
+                onClick={() => {
+                  setBatteryOpen((o) => !o);
+                  setClockOpen(false);
+                }}
+                aria-label={`i 人电量 ${Math.round(level)}%`}
+                className="flex items-center gap-1.5 rounded-full bg-white/75 px-3 py-1.5 text-sm font-semibold text-[#6b4a35] shadow-sm backdrop-blur transition hover:bg-white"
+              >
+                <BatteryIcon level={level} />
+                {Math.round(level)}%
+              </button>
+              <button
+                onClick={() => {
+                  setClockOpen((o) => !o);
+                  setBatteryOpen(false);
+                }}
                 className="rounded-full bg-white/75 px-3 py-1.5 text-sm font-semibold text-[#6b4a35] shadow-sm backdrop-blur transition hover:bg-white"
               >
                 {night ? "☾" : "☀"} {formatHour(hour)}
@@ -327,6 +372,14 @@ export default function Wowo() {
                 拍一张
               </button>
             </div>
+            {batteryOpen && (
+              <BatteryPanel
+                level={level}
+                battery={battery}
+                onEvent={(label, delta) => updateBattery((b, t) => applyEvent(b, t, label, delta))}
+                onSet={(v) => updateBattery((b, t) => setLevel(b, t, v))}
+              />
+            )}
             {album.length > 0 && (
               <button
                 onClick={() => {
@@ -455,6 +508,84 @@ export default function Wowo() {
       )}
 
       {flash > 0 && <div key={flash} className="shutter-flash pointer-events-none absolute inset-0 bg-white" />}
+    </div>
+  );
+}
+
+function BatteryIcon({ level }: { level: number }) {
+  return (
+    <span className="relative inline-flex h-3 w-6 items-center rounded-[3px] border-2 border-current p-px after:absolute after:-right-[4px] after:h-1.5 after:w-[2px] after:rounded-r-sm after:bg-current">
+      <span
+        className={`h-full rounded-[1px] transition-[width] duration-500 ${level < LOW ? "battery-low" : ""}`}
+        style={{ width: `${Math.max(8, level)}%`, background: batteryColor(level) }}
+      />
+    </span>
+  );
+}
+
+function BatteryPanel({
+  level,
+  battery,
+  onEvent,
+  onSet,
+}: {
+  level: number;
+  battery: Battery;
+  onEvent: (label: string, delta: number) => void;
+  onSet: (level: number) => void;
+}) {
+  const today = new Date(battery.at).toDateString();
+  const log = battery.log.filter((e) => new Date(e.at).toDateString() === today);
+  const spent = -log.reduce((sum, e) => sum + Math.min(0, e.delta), 0);
+  const toFull = hoursToFull(level);
+  const chip = "rounded-full px-2.5 py-1 text-xs font-semibold transition active:scale-95";
+
+  return (
+    <div className="card-pop w-72 rounded-2xl bg-[#fffaf2]/95 p-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm font-bold text-[#6b4a35]">i 人电量</span>
+        <span className="text-2xl font-extrabold" style={{ color: batteryColor(level) }}>
+          {Math.round(level)}%
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-[#8b6b55]">{moodFor(level)}</p>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={Math.round(level)}
+        onChange={(e) => onSet(Number(e.target.value))}
+        className="mt-3 w-full"
+        style={{ accentColor: batteryColor(level) }}
+        aria-label="手动调电量"
+      />
+      <p className="text-[11px] text-[#a2866f]">
+        {toFull < 0.05 ? "满电了" : `待在窝里会慢慢回电，大约 ${toFull < 1 ? `${Math.round(toFull * 60)} 分钟` : `${toFull.toFixed(1)} 小时`}充满`}
+      </p>
+
+      <div className="mt-3 text-xs font-semibold text-[#a2866f]">刚才去干嘛了</div>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {DRAINS.map((d) => (
+          <button key={d.label} onClick={() => onEvent(d.label, d.delta)} className={`${chip} bg-[#fbe3d6] text-[#c25a33] hover:bg-[#f8d4c1]`}>
+            {d.label} {d.delta}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 text-xs font-semibold text-[#a2866f]">回窝充电</div>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {CHARGES.map((c) => (
+          <button key={c.label} onClick={() => onEvent(c.label, c.delta)} className={`${chip} bg-[#e2f0dc] text-[#4f8a49] hover:bg-[#d4e9cc]`}>
+            {c.label} +{c.delta}
+          </button>
+        ))}
+      </div>
+
+      {log.length > 0 && (
+        <div className="mt-3 border-t border-[#efe1cc] pt-2 text-[11px] leading-relaxed text-[#a2866f]">
+          今天社交花掉 <b className="text-[#c25a33]">{spent}%</b>：{log.map((e) => `${e.label}${e.delta > 0 ? "+" : ""}${e.delta}`).join(" · ")}
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-[#c4ab95]">低于 {LOW}% 时你会自己回卧室窝着，猫会过来陪你</p>
     </div>
   );
 }

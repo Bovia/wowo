@@ -577,7 +577,7 @@ const STEPS: Cell[] = [
   [0, -1],
 ];
 
-export function randomWalk(nav: Nav, from: Cell): Cell[] {
+function reachable(nav: Nav, from: Cell) {
   const start = cellKey(from[0], from[1]);
   const parent = new Map<string, string | null>([[start, null]]);
   const queue: Cell[] = [from];
@@ -591,13 +591,34 @@ export function randomWalk(nav: Nav, from: Cell): Cell[] {
       queue.push(next);
     }
   }
-  const targets = [...parent.keys()].filter((k) => k !== start);
-  if (!targets.length) return [];
-  let cur: string | null = targets[Math.floor(Math.random() * targets.length)];
+  return { start, parent };
+}
+
+function trace(parent: Map<string, string | null>, start: string, target: string): Cell[] {
   const path: Cell[] = [];
+  let cur: string | null = target;
   while (cur && cur !== start) {
     path.unshift(cur.split(",").map(Number) as Cell);
     cur = parent.get(cur) ?? null;
   }
   return path;
+}
+
+export function randomWalk(nav: Nav, from: Cell): Cell[] {
+  const { start, parent } = reachable(nav, from);
+  const targets = [...parent.keys()].filter((k) => k !== start);
+  if (!targets.length) return [];
+  return trace(parent, start, targets[Math.floor(Math.random() * targets.length)]);
+}
+
+export function walkToward(nav: Nav, from: Cell, x: number, z: number, spread = 0): Cell[] {
+  const { start, parent } = reachable(nav, from);
+  const dist = (k: string) => {
+    const [i, j] = k.split(",").map(Number);
+    return Math.hypot((i + 0.5) * nav.res - x, (j + 0.5) * nav.res - z);
+  };
+  const keys = [...parent.keys()];
+  const best = Math.min(...keys.map(dist));
+  const near = keys.filter((k) => dist(k) <= best + spread);
+  return trace(parent, start, near[Math.floor(Math.random() * near.length)]);
 }

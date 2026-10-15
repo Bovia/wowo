@@ -35,8 +35,10 @@ export function captionFor(ctx: {
   cat?: string;
   room?: string;
   running?: { room: string; item: string };
+  charging?: boolean;
 }) {
   const h = ((ctx.hour % 24) + 24) % 24;
+  if (ctx.charging) return pick(["充电中，勿扰", "今天的社交额度用完了", "回窝，关机，被猫压着", "电量告急，猫猫守护中"]);
   if (ctx.cat) return pick([`${ctx.cat}在巡视领地`, `${ctx.cat}今天也很忙`, `跟拍${ctx.cat}，第一视角`, `${ctx.cat}：别拍了`]);
   const lines: string[] = [];
   if (ctx.room) lines.push(`今天的${ctx.room}`, `${ctx.room}，一切照旧`);

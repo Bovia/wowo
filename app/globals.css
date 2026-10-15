@@ -202,6 +202,29 @@ body {
   font-family: "Kaiti SC", "STKaiti", "KaiTi", "Hiragino Mincho ProN", serif;
 }
 
+.charge-bubble {
+  white-space: nowrap;
+  border-radius: 999px;
+  background: rgba(255, 250, 242, 0.94);
+  padding: 3px 10px 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #c25a33;
+  box-shadow: 0 4px 12px rgba(107, 74, 53, 0.18);
+  animation: alert-bob 3s ease-in-out infinite;
+}
+
+.charge-bolt,
+.battery-low {
+  animation: blink 1.6s ease-in-out infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .plus-btn,
   .plus-pulse::after,
