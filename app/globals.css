@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+body {
+  background: #f6efe4;
+  color: #6b4a35;
+  font-family:
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  overscroll-behavior: none;
+}
+
+.wowo-bg {
+  background:
+    radial-gradient(ellipse at 50% 55%, #fdf8f0 0%, #f6efe4 45%, #eddcc6 100%);
+}
+
+.welcome {
+  animation: welcome 2.9s ease-out both;
+}
+
+@keyframes welcome {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(6px);
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.5s ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.card-pop {
+  animation: card-pop 0.28s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+@keyframes card-pop {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+
+.plus-btn {
+  animation: bob 3.2s ease-in-out infinite;
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -5px;
+  }
+}
+
+.plus-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 1rem;
+  box-shadow: 0 0 0 0 rgba(255, 138, 91, 0.5);
+  animation: pulse 2.4s ease-out infinite;
+}
+
+@keyframes pulse {
+  to {
+    box-shadow: 0 0 0 16px rgba(255, 138, 91, 0);
+  }
+}
+
+.room-pill {
+  white-space: nowrap;
+  border-radius: 999px;
+  background: rgba(255, 250, 242, 0.92);
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b4a35;
+  box-shadow: 0 4px 12px rgba(107, 74, 53, 0.15);
+}
+
+.is-night .ink {
+  color: #f4e6d2;
+}
+
+.is-night .ink-soft {
+  color: rgb(236 220 200 / 0.78);
+}
+
+.room-alert {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 7px;
+  background: #ff8a5b;
+  box-shadow: 0 3px 0 #d9673d;
+  font-size: 12px;
+  font-weight: 800;
+  color: white;
+  animation: alert-bob 2.4s ease-in-out infinite;
+}
+
+@keyframes alert-bob {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.pixel-icon {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.45) 0 25%, transparent 25%),
+    conic-gradient(
+      from 90deg at 50% 50%,
+      var(--c) 0 25%,
+      color-mix(in srgb, var(--c) 85%, black) 0 50%,
+      var(--c) 0 75%,
+      color-mix(in srgb, var(--c) 92%, black) 0
+    );
+  box-shadow: inset 0 0 0 1.5px rgba(107, 74, 53, 0.12);
+}
+
+.scan-line {
+  top: -2rem;
+  background: linear-gradient(to bottom, transparent, rgb(255 138 91 / 0.35), transparent);
+  animation: scan 1.8s ease-in-out infinite;
+}
+
+@keyframes scan {
+  to {
+    top: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plus-btn,
+  .plus-pulse::after,
+  .scan-line,
+  .room-alert {
+    animation: none;
+  }
+}
