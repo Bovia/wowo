@@ -6,6 +6,7 @@ import { EffectComposer, N8AO, SMAA } from "@react-three/postprocessing";
 import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { Color, Object3D, Vector3, type Group, type InstancedMesh } from "three";
 import { LOW } from "@/lib/battery";
+import type { Family } from "@/lib/family";
 import { skyAt, sunPosition } from "@/lib/daylight";
 import { buildHome, type Box, type Layout } from "@/lib/home";
 import { Creatures } from "./creatures";
@@ -200,6 +201,7 @@ export function HouseScene({
   alerts,
   hour,
   battery,
+  family,
   follow,
   camFree,
   onFollow,
@@ -211,6 +213,7 @@ export function HouseScene({
   alerts: Record<string, number>;
   hour: number;
   battery: number;
+  family: Family;
   follow: number | null;
   camFree: boolean;
   onFollow: (cat: number) => void;
@@ -345,6 +348,7 @@ export function HouseScene({
               onPickCat={interactive ? onFollow : undefined}
               nest={interactive ? nest : null}
               battery={battery}
+              family={family}
             />
           )}
 

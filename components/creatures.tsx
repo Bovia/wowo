@@ -4,11 +4,12 @@ import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, type ReactNode, type RefObject } from "react";
 import type { Group } from "three";
+import type { Coat, Family, Person } from "@/lib/family";
 import { cellKey, FLOOR, randomWalk, walkToward, type BuiltHome, type Cell } from "@/lib/home";
 
 type Part = { size: [number, number, number]; pos: [number, number, number]; color: string };
 
-function Parts({ parts }: { parts: Part[] }) {
+export function Parts({ parts }: { parts: Part[] }) {
   return parts.map((p, i) => (
     <mesh key={i} position={p.pos} castShadow>
       <boxGeometry args={p.size} />
@@ -20,48 +21,84 @@ function Parts({ parts }: { parts: Part[] }) {
 const WHITE = "#fbfaf7";
 const BLACK = "#26221f";
 
-function catParts(patch: "back" | "head"): Part[] {
+const COAT_BASE: Record<Coat, { fur: string; ear: string; tail: string; eye: string }> = {
+  cowBack: { fur: WHITE, ear: BLACK, tail: BLACK, eye: BLACK },
+  cowHead: { fur: WHITE, ear: BLACK, tail: BLACK, eye: BLACK },
+  orange: { fur: "#e8a25a", ear: "#d98c45", tail: "#e8a25a", eye: "#3a2a1a" },
+  tabby: { fur: "#a08c6e", ear: "#7d6b52", tail: "#a08c6e", eye: "#3a2a1a" },
+  black: { fur: "#2b2724", ear: "#2b2724", tail: "#2b2724", eye: "#f2c94c" },
+  white: { fur: WHITE, ear: "#f2c2c2", tail: WHITE, eye: "#5b8fc7" },
+  calico: { fur: WHITE, ear: BLACK, tail: "#e8a25a", eye: BLACK },
+  blue: { fur: "#8d96a0", ear: "#7c8590", tail: "#8d96a0", eye: "#e0a83c" },
+};
+
+const stripes = (color: string): Part[] => [
+  ...[-0.2, -0.04, 0.12].map((x): Part => ({ size: [0.06, 0.29, 0.31], pos: [x, 0.305, 0], color })),
+  { size: [0.29, 0.06, 0.28], pos: [0.36, 0.6, 0], color },
+  { size: [0.07, 0.07, 0.07], pos: [-0.36, 0.6, 0], color },
+];
+
+export function catParts(coat: Coat): Part[] {
+  const c = COAT_BASE[coat];
   const parts: Part[] = [
-    { size: [0.6, 0.28, 0.3], pos: [0, 0.3, 0], color: WHITE },
-    { size: [0.28, 0.27, 0.27], pos: [0.36, 0.48, 0], color: WHITE },
-    { size: [0.08, 0.09, 0.07], pos: [0.36, 0.65, 0.08], color: BLACK },
-    { size: [0.08, 0.09, 0.07], pos: [0.36, 0.65, -0.08], color: BLACK },
+    { size: [0.6, 0.28, 0.3], pos: [0, 0.3, 0], color: c.fur },
+    { size: [0.28, 0.27, 0.27], pos: [0.36, 0.48, 0], color: c.fur },
+    { size: [0.08, 0.09, 0.07], pos: [0.36, 0.65, 0.08], color: c.ear },
+    { size: [0.08, 0.09, 0.07], pos: [0.36, 0.65, -0.08], color: c.ear },
+    { size: [0.03, 0.05, 0.04], pos: [0.5, 0.53, 0.065], color: c.eye },
+    { size: [0.03, 0.05, 0.04], pos: [0.5, 0.53, -0.065], color: c.eye },
     { size: [0.04, 0.04, 0.04], pos: [0.51, 0.45, 0], color: "#e99a9a" },
-    { size: [0.06, 0.06, 0.06], pos: [-0.33, 0.44, 0], color: BLACK },
-    { size: [0.06, 0.2, 0.06], pos: [-0.36, 0.56, 0], color: BLACK },
+    { size: [0.06, 0.06, 0.06], pos: [-0.33, 0.44, 0], color: c.tail },
+    { size: [0.06, 0.2, 0.06], pos: [-0.36, 0.56, 0], color: c.tail },
     ...[
       [0.2, 0.1],
       [0.2, -0.1],
       [-0.2, 0.1],
       [-0.2, -0.1],
-    ].map(([x, z]): Part => ({ size: [0.08, 0.17, 0.08], pos: [x, 0.08, z], color: WHITE })),
+    ].map(([x, z]): Part => ({ size: [0.08, 0.17, 0.08], pos: [x, 0.08, z], color: c.fur })),
   ];
-  if (patch === "back") {
+  if (coat === "cowBack") {
     parts.push({ size: [0.3, 0.3, 0.32], pos: [-0.05, 0.31, 0], color: BLACK });
     parts.push({ size: [0.29, 0.12, 0.28], pos: [0.36, 0.58, 0], color: BLACK });
-  } else {
+  } else if (coat === "cowHead") {
     parts.push({ size: [0.29, 0.28, 0.16], pos: [0.36, 0.49, 0.07], color: BLACK });
     parts.push({ size: [0.16, 0.29, 0.31], pos: [0.12, 0.3, 0], color: BLACK });
     parts.push({ size: [0.09, 0.18, 0.09], pos: [-0.2, 0.08, 0.1], color: BLACK });
+  } else if (coat === "orange") {
+    parts.push(...stripes("#c27a3a"));
+    parts.push({ size: [0.1, 0.16, 0.2], pos: [0.27, 0.27, 0], color: WHITE });
+  } else if (coat === "tabby") {
+    parts.push(...stripes("#5e5040"));
+    parts.push({ size: [0.1, 0.16, 0.2], pos: [0.27, 0.27, 0], color: "#d9ccb4" });
+  } else if (coat === "calico") {
+    parts.push({ size: [0.24, 0.3, 0.32], pos: [-0.12, 0.31, 0], color: "#e8a25a" });
+    parts.push({ size: [0.14, 0.29, 0.31], pos: [0.12, 0.31, 0], color: BLACK });
+    parts.push({ size: [0.29, 0.12, 0.14], pos: [0.36, 0.58, -0.07], color: "#e8a25a" });
+    parts.push({ size: [0.29, 0.12, 0.14], pos: [0.36, 0.58, 0.07], color: BLACK });
   }
   return parts;
 }
 
-function personParts(shirt: string, hair: string, longHair: boolean): Part[] {
-  const skin = "#f1c9a5";
+export function personParts(p: Person): Part[] {
   const parts: Part[] = [
-    { size: [0.14, 0.4, 0.14], pos: [0, 0.2, 0.09], color: "#3b3f4a" },
-    { size: [0.14, 0.4, 0.14], pos: [0, 0.2, -0.09], color: "#3b3f4a" },
-    { size: [0.24, 0.42, 0.38], pos: [0, 0.61, 0], color: shirt },
-    { size: [0.12, 0.36, 0.1], pos: [0, 0.62, 0.25], color: shirt },
-    { size: [0.12, 0.36, 0.1], pos: [0, 0.62, -0.25], color: shirt },
-    { size: [0.32, 0.32, 0.32], pos: [0, 0.99, 0], color: skin },
-    { size: [0.34, 0.1, 0.34], pos: [0, 1.18, 0], color: hair },
-    { size: [0.1, 0.24, 0.34], pos: [-0.13, 1.04, 0], color: hair },
+    { size: [0.14, 0.4, 0.14], pos: [0, 0.2, 0.09], color: p.pants },
+    { size: [0.14, 0.4, 0.14], pos: [0, 0.2, -0.09], color: p.pants },
+    { size: [0.24, 0.42, 0.38], pos: [0, 0.61, 0], color: p.shirt },
+    { size: [0.12, 0.36, 0.1], pos: [0, 0.62, 0.25], color: p.shirt },
+    { size: [0.12, 0.36, 0.1], pos: [0, 0.62, -0.25], color: p.shirt },
+    { size: [0.32, 0.32, 0.32], pos: [0, 0.99, 0], color: p.skin },
     { size: [0.04, 0.05, 0.04], pos: [0.165, 1.0, 0.07], color: BLACK },
     { size: [0.04, 0.05, 0.04], pos: [0.165, 1.0, -0.07], color: BLACK },
   ];
-  if (longHair) parts.push({ size: [0.12, 0.42, 0.36], pos: [-0.14, 0.9, 0], color: hair });
+  if (p.style === "buzz") {
+    parts.push({ size: [0.33, 0.05, 0.33], pos: [0, 1.16, 0], color: p.hair });
+    parts.push({ size: [0.06, 0.18, 0.33], pos: [-0.14, 1.06, 0], color: p.hair });
+  } else {
+    parts.push({ size: [0.34, 0.1, 0.34], pos: [0, 1.18, 0], color: p.hair });
+    parts.push({ size: [0.1, 0.24, 0.34], pos: [-0.13, 1.04, 0], color: p.hair });
+  }
+  if (p.style === "long") parts.push({ size: [0.12, 0.42, 0.36], pos: [-0.14, 0.9, 0], color: p.hair });
+  if (p.style === "bun") parts.push({ size: [0.16, 0.15, 0.16], pos: [-0.06, 1.3, 0], color: p.hair });
   return parts;
 }
 
@@ -206,8 +243,6 @@ function Wanderer({
   );
 }
 
-export const CAT_NAMES = ["麻薯", "芝麻"];
-
 const CAT_IDLE: [number, number] = [2, 7];
 const PERSON_IDLE: [number, number] = [3, 9];
 
@@ -217,17 +252,19 @@ export function Creatures({
   onPickCat,
   nest,
   battery,
+  family,
 }: {
   home: BuiltHome;
   catsRef: RefObject<(Group | null)[]>;
   onPickCat?: (i: number) => void;
   nest: { x: number; z: number } | null;
   battery: number;
+  family: Family;
 }) {
-  const cats = useMemo(() => [catParts("back"), catParts("head")], []);
+  const cats = useMemo(() => family.cats.map((c) => ({ key: c.id, parts: catParts(c.coat) })), [family.cats]);
   const people = useMemo(
-    () => [personParts("#4f7cac", "#2b2522", false), personParts("#e59a8c", "#3a2a22", true)],
-    [],
+    () => [family.me, ...(family.partner ? [family.partner] : [])].map(personParts),
+    [family.me, family.partner],
   );
   const me = useRef<Group | null>(null);
   const charging = nest !== null;
@@ -236,9 +273,9 @@ export function Creatures({
 
   return (
     <>
-      {cats.map((parts, i) => (
+      {cats.map(({ key, parts }, i) => (
         <Wanderer
-          key={`cat${i}`}
+          key={key}
           home={home}
           speed={1.4}
           idle={CAT_IDLE}

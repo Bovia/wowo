@@ -20,6 +20,7 @@ import {
 } from "@/lib/battery";
 import { formatHour, nowHour, skyAt } from "@/lib/daylight";
 import { colorFor, itemsFor, loadInventory, newId, roomKey, saveInventory, type InvItem, type Inventory } from "@/lib/inventory";
+import { loadFamily, saveFamily, type Family } from "@/lib/family";
 import { DEMOS, DEMO_ROOMS, TEMPLATES } from "@/lib/layouts";
 import {
   capturePhoto,
@@ -32,7 +33,7 @@ import {
   type Snap,
 } from "@/lib/polaroid";
 import { scanToLayout, type Scan } from "@/lib/scan";
-import { CAT_NAMES } from "./creatures";
+import { FamilyEditor } from "./family-editor";
 import { HouseScene, type IntroMode } from "./house-scene";
 
 const SEEN_KEY = "wowo:intro-seen";
@@ -168,6 +169,14 @@ export default function Wowo() {
   };
 
   const [follow, setFollow] = useState<number | null>(null);
+  const [family, setFamily] = useState<Family>(loadFamily);
+  const [familyOpen, setFamilyOpen] = useState(false);
+  const catNames = family.cats.map((c) => c.name || "猫");
+  const updateFamily = (f: Family) => {
+    setFamily(f);
+    saveFamily(f);
+    if (follow !== null && follow >= f.cats.length) setFollow(null);
+  };
   const [camFree, setCamFree] = useState(true);
   const startFollow = (cat: number) => {
     setFollow(cat);
@@ -222,7 +231,7 @@ export default function Wowo() {
         caption: captionFor({
           hour,
           home: layout.demo ? layout.name : "我的窝",
-          cat: follow !== null ? CAT_NAMES[follow] : undefined,
+          cat: follow !== null ? catNames[follow] : undefined,
           room: selectedRoom?.name,
           running,
           charging: level < LOW,
@@ -271,6 +280,7 @@ export default function Wowo() {
           alerts={alerts}
           hour={hour}
           battery={level}
+          family={family}
           follow={follow}
           camFree={camFree}
           onFollow={startFollow}
@@ -372,6 +382,18 @@ export default function Wowo() {
                 className="rounded-full bg-[#ff8a5b] px-2.5 py-1.5 text-[13px] font-semibold sm:px-3 sm:text-sm text-white shadow-[0_3px_0_#d9673d] transition active:translate-y-0.5 active:shadow-[0_1px_0_#d9673d]"
               >
                 拍一张
+              </button>
+              <button
+                onClick={() => {
+                  setFamilyOpen(true);
+                  setSelected(null);
+                  setBatteryOpen(false);
+                  setClockOpen(false);
+                  setAlbumOpen(false);
+                }}
+                className="rounded-full bg-white/75 px-2.5 py-1.5 text-[13px] text-[#8b6b55] shadow-sm backdrop-blur transition hover:bg-white sm:px-3 sm:text-sm"
+              >
+                家里人
               </button>
               {album.length > 0 && (
                 <button
@@ -490,10 +512,10 @@ export default function Wowo() {
           {follow !== null && (
             <div className="card-pop absolute inset-x-0 bottom-14 mx-auto flex w-fit items-center gap-2 rounded-full bg-[#fffaf2]/95 p-1.5 pl-4 shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
               <span className="text-sm text-[#6b4a35]">
-                正在跟着 <b>{CAT_NAMES[follow]}</b>
+                正在跟着 <b>{catNames[follow]}</b>
               </span>
               <button
-                onClick={() => setFollow((f) => ((f ?? 0) + 1) % CAT_NAMES.length)}
+                onClick={() => setFollow((f) => ((f ?? 0) + 1) % catNames.length)}
                 className="rounded-full bg-[#f6ecdf] px-3 py-1.5 text-xs font-semibold text-[#8b6b55] transition hover:bg-[#efe1cc]"
               >
                 换一只
@@ -521,6 +543,8 @@ export default function Wowo() {
           {uploadOpen && (
             <UploadPanel onClose={() => setUploadOpen(false)} onChoose={chooseTemplate} onScan={chooseScan} />
           )}
+
+          {familyOpen && <FamilyEditor family={family} onChange={updateFamily} onClose={() => setFamilyOpen(false)} />}
 
           {snap && (
             <PolaroidCard
