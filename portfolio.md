@@ -2,7 +2,7 @@
 title: 窝窝
 description: 马赛克风格的 3D 小窝，户型图变成可旋转的家，猫在里面溜达，灯随真实时间亮起
 published: true
-demoUrl: https://wowo.vercel.app/
+demoUrl: https://wowo-omega.vercel.app/
 githubUrl: https://github.com/Bovia/wowo
 date: 2026-10
 tags:
