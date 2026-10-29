@@ -262,7 +262,7 @@ export default function Wowo() {
       setReceipt({ status: "ready", receipt: data.receipt });
     } catch (err) {
       const code = err instanceof Error ? err.message : "failed";
-      const retry = code !== "no-key" && code !== "login";
+      const retry = code !== "no-key" && code !== "login" && code !== "quota";
       setReceipt({ status: "error", message: RECEIPT_ERRORS[code] ?? "没认出来，网络或模型出了点问题，待会再试。", retry });
     }
   };
@@ -1381,12 +1381,14 @@ function RoomCard({
 const RECEIPT_ERRORS: Record<string, string> = {
   login: "截图识别要登录后才能用（认图要花钱）。点左上角「存到云上」登录一下。",
   "no-key": "认图的 AI 还没配好，暂时用不了。",
+  quota: "认图的免费额度用完了，先手动加吧。",
   "not-receipt": "这张好像不是购物截图。换一张订单页、购物车或小票试试。",
   "bad-image": "图片太大或格式不对，换一张。",
 };
 
 const SCAN_ERRORS: Record<string, string> = {
   "no-key": "还没配置 AI 密钥，暂时认不了图。先选一个最接近的。",
+  quota: "认图的免费额度用完了，暂时认不了。先选一个最接近的。",
   "not-plan": "这张图好像不是户型图。换一张，或者先选一个最接近的。",
   "bad-plan": "认出来的结构有点乱，没法搭。换一张清楚点的，或者先选一个。",
 };

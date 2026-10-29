@@ -1,4 +1,4 @@
-import { aiReady, readImage } from "@/lib/ai";
+import { aiFailure, aiReady, readImage } from "@/lib/ai";
 import { scanSchema } from "@/lib/scan";
 
 const MODEL = process.env.WOWO_SCAN_MODEL ?? "google/gemini-3.5-flash";
@@ -37,6 +37,7 @@ export async function POST(request: Request) {
     return Response.json({ scan: output });
   } catch (err) {
     console.error("scan failed", err);
+    if (aiFailure(err) === "quota") return Response.json({ error: "quota" }, { status: 503 });
     const detail = process.env.NODE_ENV === "development" ? String(err) : undefined;
     return Response.json({ error: "failed", detail }, { status: 502 });
   }

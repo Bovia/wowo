@@ -49,3 +49,17 @@ export async function readImage<S extends z.ZodType>({
   });
   return output as z.infer<S>;
 }
+
+// 认图失败的原因，给前端换成人话。免费额度用完（开了「用完即停」）时百炼回 403 AllocationQuota.FreeTierOnly
+export function aiFailure(err: unknown): "quota" | "failed" {
+  const seen: unknown[] = [];
+  const walk = (e: unknown): boolean => {
+    if (!e || typeof e !== "object" || seen.includes(e)) return false;
+    seen.push(e);
+    const x = e as { message?: unknown; responseBody?: unknown; data?: unknown; cause?: unknown; lastError?: unknown; errors?: unknown };
+    const text = `${String(x.message ?? "")} ${String(x.responseBody ?? "")} ${JSON.stringify(x.data ?? "")}`;
+    if (/FreeTierOnly|AllocationQuota/i.test(text)) return true;
+    return [x.cause, x.lastError, ...(Array.isArray(x.errors) ? x.errors : [])].some(walk);
+  };
+  return walk(err) ? "quota" : "failed";
+}
