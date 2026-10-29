@@ -11,7 +11,18 @@ export type Draft = {
   source: "receipt" | "photo";
   shop: string | null;
   boughtAt: string | null;
-  items: { name: string; spec: string | null; count: number; price: number | null; category: Category; roomKind: string | null; low: boolean }[];
+  items: {
+    name: string;
+    spec: string | null;
+    count: number;
+    price: number | null;
+    category: Category;
+    roomKind: string | null;
+    low: boolean;
+    // 衣服的种类、颜色、季节，放进物品的 extra；hex 当图标颜色
+    extra?: Record<string, unknown>;
+    hex?: string;
+  }[];
 };
 
 export const fromReceipt = (r: Receipt): Draft => ({
@@ -26,7 +37,21 @@ export const fromPhoto = (p: PhotoItems): Draft => ({
   source: "photo",
   shop: null,
   boughtAt: null,
-  items: p.items.map((it) => ({ name: it.name, spec: it.note, count: it.count, price: null, category: it.category, roomKind: null, low: it.low })),
+  items: p.items.map((it) => ({
+    name: it.name,
+    spec: it.clothes ? [...new Set([it.clothes.colorName, it.note].filter(Boolean))].join("，") || null : it.note,
+    count: it.count,
+    price: null,
+    category: it.category,
+    roomKind: null,
+    low: it.low,
+    ...(it.clothes
+      ? {
+          extra: { kind: it.clothes.kind, colorName: it.clothes.colorName, season: it.clothes.season },
+          hex: /^#[0-9a-f]{6}$/i.test(it.clothes.hex) ? it.clothes.hex : undefined,
+        }
+      : {}),
+  })),
 });
 
 // retry=false：换一张也没用（没登录、AI 没配好、额度用完），只给「知道了」
@@ -43,6 +68,8 @@ export type ReceiptEntry = {
   price: number | null;
   category: Category;
   low: boolean;
+  extra?: Record<string, unknown>;
+  hex?: string;
 };
 
 const WORDS = {
@@ -132,6 +159,8 @@ function Lines({
       price: it.price,
       category: it.category,
       low: it.low,
+      extra: it.extra,
+      hex: it.hex,
     })),
   );
   const picked = rows.filter((r) => r.on && r.name.trim());

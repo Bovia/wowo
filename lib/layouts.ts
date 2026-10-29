@@ -191,7 +191,7 @@ export type Item = { name: string; note?: string; color: string; warn?: boolean 
 
 export const DEMO_ROOMS: Record<string, { note: string; items: Item[] }> = {
   bedroom: {
-    note: "衣柜先不展开，以后再说。",
+    note: "衣服在「衣橱」里，记一下每天穿了什么。",
     items: [
       { name: "衣柜", note: "32 件衣服", color: "#c99a6b" },
       { name: "床头的书", note: "读到第 4 章", color: "#7fa6c9" },

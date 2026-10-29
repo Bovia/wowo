@@ -41,6 +41,8 @@ import { FamilyEditor } from "./family-editor";
 import { SharePanel } from "./share-panel";
 import { fromPhoto, fromReceipt, ReceiptSheet, type Draft, type ReceiptEntry, type ReceiptState } from "./receipt-sheet";
 import type { PhotoItems } from "@/lib/photo-items";
+import { Wardrobe, type Worn } from "./wardrobe";
+import { isClothes } from "@/lib/wardrobe";
 import type { Receipt } from "@/lib/receipt";
 import { isEmbed } from "@/lib/embed";
 import { HouseScene, type IntroMode } from "./house-scene";
@@ -278,25 +280,64 @@ export default function Wowo() {
     for (const e of entries) {
       const list = (changes[e.room] ??= [...itemsFor(inventory, layout, e.room)]);
       const name = e.name.trim();
-      const known = { category: e.category, source, ...(e.price !== null ? { price: e.price } : {}), ...(boughtAt ? { boughtAt } : {}) };
+      const known = {
+        category: e.category,
+        source,
+        ...(e.price !== null ? { price: e.price } : {}),
+        ...(boughtAt ? { boughtAt } : {}),
+        ...(e.hex ? { color: e.hex } : {}),
+      };
       // 名字先找一模一样的，再找互相包含的（「鲜鸡蛋」就是「鸡蛋」）
       const same = (a: string) => a.length >= 2 && name.length >= 2 && (a.includes(name) || name.includes(a));
       const exact = list.findIndex((it) => it.name === name);
-      const i = exact >= 0 ? exact : list.findIndex((it) => same(it.name));
+      // 衣服不能光看名字：黑卫衣和白卫衣是两件，名字和颜色都对上才算同一件
+      const color = e.extra?.colorName;
+      const i =
+        e.category === "clothes"
+          ? list.findIndex((it) => it.name === name && (it.extra as { colorName?: unknown } | undefined)?.colorName === color)
+          : exact >= 0
+            ? exact
+            : list.findIndex((it) => same(it.name));
       if (i >= 0) {
         // 屋里已经有同名的：截图是又买了，加数量；拍照是现在就这么多，按照片改
         list[i] =
           source === "photo"
-            ? { ...list[i], ...known, count: e.count, warn: e.low, ...(e.spec ? { note: e.spec } : {}) }
-            : { ...list[i], ...known, count: (list[i].count ?? 1) + e.count, warn: false };
+            ? { ...list[i], ...known, count: e.count, warn: e.low, ...(e.spec ? { note: e.spec } : {}), extra: { ...list[i].extra, ...e.extra } }
+            : { ...list[i], ...known, count: (list[i].count ?? 1) + e.count, warn: false, extra: { ...list[i].extra, ...e.extra } };
       } else {
-        list.push({ id: newId(), name, count: e.count, color: colorFor(name), ...(e.spec ? { note: e.spec } : {}), ...(e.low ? { warn: true } : {}), ...known });
+        list.push({
+          id: newId(),
+          name,
+          count: e.count,
+          color: colorFor(name),
+          ...(e.spec ? { note: e.spec } : {}),
+          ...(e.low ? { warn: true } : {}),
+          ...(e.extra ? { extra: e.extra } : {}),
+          ...known,
+        });
       }
     }
     setRooms(changes);
     setReceipt(null);
     setStepNote(`放进去 ${entries.length} 样`);
   };
+  // 衣橱：把各屋里的衣服汇到一起看；改动按屋写回去
+  const [wardrobeOpen, setWardrobeOpen] = useState(false);
+  const clothes: Worn[] = layout.rooms.flatMap((r) =>
+    itemsFor(inventory, layout, r.id)
+      .filter(isClothes)
+      .map((item) => ({ room: r.id, item })),
+  );
+  const updateClothes = (changes: Worn[]) => {
+    const rooms: Record<string, InvItem[]> = {};
+    for (const { room, item } of changes) {
+      const list = (rooms[room] ??= [...itemsFor(inventory, layout, room)]);
+      const i = list.findIndex((it) => it.id === item.id);
+      if (i >= 0) list[i] = item;
+    }
+    setRooms(rooms);
+  };
+
   const alerts = useMemo(
     () =>
       Object.fromEntries(
@@ -946,6 +987,7 @@ export default function Wowo() {
               items={itemsFor(inventory, layout, selectedRoom.id)}
               onChange={(items) => setRoomItems(selectedRoom.id, items)}
               onScan={pickSight}
+              onWardrobe={selectedRoom.kind === "bedroom" ? () => setWardrobeOpen(true) : undefined}
               onClose={() => setSelected(null)}
             />
           )}
@@ -964,6 +1006,18 @@ export default function Wowo() {
               e.target.value = "";
             }}
           />
+          {wardrobeOpen && (
+            <Wardrobe
+              clothes={clothes}
+              onUpdate={updateClothes}
+              onPhoto={() => {
+                setWardrobeOpen(false);
+                pickSight("photo");
+              }}
+              onClose={() => setWardrobeOpen(false)}
+            />
+          )}
+
           {receipt && (
             <ReceiptSheet
               state={receipt}
@@ -1209,6 +1263,7 @@ function RoomCard({
   items,
   onChange,
   onScan,
+  onWardrobe,
   onClose,
 }: {
   name: string;
@@ -1216,6 +1271,8 @@ function RoomCard({
   items: InvItem[];
   onChange: (items: InvItem[]) => void;
   onScan: (source: "receipt" | "photo") => void;
+  // 卧室才有：打开衣橱
+  onWardrobe?: () => void;
   onClose: () => void;
 }) {
   const [active, setActive] = useState<string | null>(null);
@@ -1301,6 +1358,18 @@ function RoomCard({
         >
           +
         </button>
+        {onWardrobe && (
+          <button
+            onClick={onWardrobe}
+            aria-label="打开衣橱"
+            className="grid min-h-[76px] place-items-center rounded-2xl border-2 border-[#efe1cc] bg-white px-1 text-[11px] leading-tight font-semibold text-[#6b4a35] transition hover:border-[#ff8a5b]"
+          >
+            <span>
+              <span className="block text-lg leading-none">⌂</span>
+              衣橱
+            </span>
+          </button>
+        )}
         {(
           [
             ["photo", "◎", "拍一拍", "拍照认出这里有什么"],
