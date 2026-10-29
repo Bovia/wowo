@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { aiReady, readImage } from "@/lib/ai";
 import { scanSchema } from "@/lib/scan";
 
 const MODEL = process.env.WOWO_SCAN_MODEL ?? "google/gemini-3.5-flash";
@@ -17,7 +17,7 @@ const PROMPT = `你在读一张中国常见的住宅户型图，要把它还原�
 如果这张图根本不是户型图，isFloorPlan=false，其余给空数组。`;
 
 export async function POST(request: Request) {
-  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN)
+  if (!aiReady())
     return Response.json({ error: "no-key" }, { status: 503 });
 
   const form = await request.formData();
@@ -26,18 +26,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "bad-image" }, { status: 400 });
 
   try {
-    const { output } = await generateText({
-      model: MODEL,
-      output: Output.object({ schema: scanSchema }),
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: PROMPT },
-            { type: "file", mediaType: file.type, data: new Uint8Array(await file.arrayBuffer()) },
-          ],
-        },
-      ],
+    const output = await readImage({
+      prompt: PROMPT,
+      schema: scanSchema,
+      image: new Uint8Array(await file.arrayBuffer()),
+      mediaType: file.type,
+      gatewayModel: MODEL,
     });
     if (!output.isFloorPlan || !output.rooms.length) return Response.json({ error: "not-plan" }, { status: 422 });
     return Response.json({ scan: output });

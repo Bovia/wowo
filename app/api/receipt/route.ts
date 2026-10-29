@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { aiReady, readImage } from "@/lib/ai";
 import { receiptSchema } from "@/lib/receipt";
 import { currentUser } from "@/lib/session";
 
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   // 认图要花钱，登录了才给用，免得公开地址被人刷
   const user = await currentUser();
   if (!user) return Response.json({ error: "login" }, { status: 401 });
-  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN)
+  if (!aiReady())
     return Response.json({ error: "no-key" }, { status: 503 });
 
   const form = await request.formData();
@@ -26,18 +26,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "bad-image" }, { status: 400 });
 
   try {
-    const { output } = await generateText({
-      model: MODEL,
-      output: Output.object({ schema: receiptSchema }),
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: PROMPT },
-            { type: "file", mediaType: file.type, data: new Uint8Array(await file.arrayBuffer()) },
-          ],
-        },
-      ],
+    const output = await readImage({
+      prompt: PROMPT,
+      schema: receiptSchema,
+      image: new Uint8Array(await file.arrayBuffer()),
+      mediaType: file.type,
+      gatewayModel: MODEL,
     });
     if (!output.isReceipt || !output.items.length) return Response.json({ error: "not-receipt" }, { status: 422 });
     return Response.json({ receipt: output });
