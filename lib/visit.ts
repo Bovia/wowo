@@ -27,7 +27,8 @@ const fromB64 = (s: string) => {
 
 export async function visitLink(card: VisitCard) {
   const packed = await pipe(new TextEncoder().encode(JSON.stringify(card)), new CompressionStream("deflate-raw"));
-  return `${location.origin}${location.pathname}${PREFIX}${toB64(packed)}`;
+  // 总是落在首页：从小镇等别的页发出去也能打开
+  return `${location.origin}/${PREFIX}${toB64(packed)}`;
 }
 
 // 活的串门：/@门牌号，打开的是对方现在的家

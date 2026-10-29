@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 import { isEmbed } from "@/lib/embed";
@@ -214,7 +215,7 @@ export function AccountDock({
         {user ? (status === "pushing" || status === "pulling" ? "同步中" : "云上的窝") : "存到云上"}
       </button>
       {open && (
-        <div className="card-pop pointer-events-auto absolute top-full left-0 z-20 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-[#fffaf2]/95 p-4 text-left shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur sm:left-auto sm:right-0">
+        <div className="card-pop pointer-events-auto absolute top-full left-0 z-20 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-[#fffaf2]/95 p-4 text-left shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
           {user ? (
             <>
               <p className="text-sm font-semibold text-[#6b4a35]">{user.email ?? user.name}</p>
@@ -226,6 +227,7 @@ export function AccountDock({
                     : "正在把家里人存到云上…"}
               </p>
               {handle && <HandleRow handle={handle} onChange={setHandle} />}
+              {handle && <TownSwitch />}
               <button
                 onClick={signOut}
                 className="mt-3 rounded-full bg-[#f6ecdf] px-3 py-1.5 text-xs font-semibold text-[#8b6b55] hover:bg-[#efe1cc]"
@@ -412,5 +414,67 @@ function HandleRow({ handle, onChange }: { handle: string; onChange: (handle: st
         </button>
       </div>
     </form>
+  );
+}
+
+// 上小镇：打开了家才会出现在 /town；关着只有拿到 /@门牌号 的人能来
+function TownSwitch() {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/me")
+      .then((r) => readJson<{ visibility?: string }>(r))
+      .then((b) => !cancel && setOn(b.visibility === "public"))
+      .catch(() => !cancel && setOn(false));
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  const flip = async () => {
+    if (on === null) return;
+    const next = !on;
+    setOn(next);
+    setNote(null);
+    try {
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ visibility: next ? "public" : "link" }),
+      });
+      if (!res.ok) throw new Error((await readJson<{ message?: string }>(res)).message ?? "");
+    } catch (err) {
+      setOn(!next);
+      setNote((err instanceof Error && err.message) || "没改成，待会再试");
+    }
+  };
+
+  return (
+    <div className="mt-2 rounded-xl bg-[#f6ecdf] px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#6b4a35]">上小镇</p>
+          <p className="text-[11px] leading-snug text-[#a2866f]">
+            {on === null ? "正在看你家在不在镇上…" : on ? "镇上的人能看到你家，点进来串门。" : "关着时，只有拿到你门牌号的人能来。"}
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={!!on}
+          aria-label="上小镇"
+          disabled={on === null}
+          onClick={flip}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-40 ${on ? "bg-[#ff8a5b]" : "bg-[#d9c6b0]"}`}
+        >
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+        </button>
+      </div>
+      {note && <p className="mt-1 text-[11px] text-[#ff8a5b]">{note}</p>}
+      <Link href="/town" className="mt-1.5 inline-block text-[11px] font-semibold text-[#ff8a5b]">
+        去镇上逛逛 →
+      </Link>
+    </div>
   );
 }

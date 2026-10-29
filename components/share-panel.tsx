@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { liveLink, visitLink, type VisitCard } from "@/lib/visit";
 
@@ -109,6 +110,9 @@ export function SharePanel({
           )}
         </div>
         {note && <p className="mt-2 text-center text-xs text-[#ff8a5b]">{note}</p>}
+        <Link href="/town" className="mt-3 block text-center text-xs font-semibold text-[#a2866f] hover:text-[#6b4a35]">
+          或者去镇上逛逛，看看邻居家 →
+        </Link>
       </div>
     </div>
   );
