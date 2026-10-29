@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 import { isEmbed } from "@/lib/embed";
+import type { Inventory } from "@/lib/inventory";
+import { markSynced, merge, pending, type CloudItem } from "@/lib/items-sync";
 import type { Snap } from "@/lib/polaroid";
 import type { HomePayload } from "@/lib/snapshot";
 
@@ -32,6 +34,20 @@ async function pushHome(home: HomePayload) {
   return body.handle ?? null;
 }
 
+async function pushItems(inv: Inventory) {
+  const list = pending(inv);
+  for (let i = 0; i < list.length; i += 500) {
+    const batch = list.slice(i, i + 500);
+    const res = await fetch("/api/items", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items: batch }),
+    });
+    if (!res.ok) throw new Error("push-items");
+    markSynced(batch);
+  }
+}
+
 async function uploadAlbum(album: Snap[]) {
   for (const snap of album) {
     if (snap.photo.startsWith("http")) continue;
@@ -50,6 +66,8 @@ export function AccountDock({
   album,
   dirtyKey,
   onHandle,
+  inventory,
+  onItems,
 }: {
   hidden: boolean;
   collect: () => HomePayload;
@@ -57,6 +75,9 @@ export function AccountDock({
   album: Snap[];
   dirtyKey: string;
   onHandle: (handle: string | null) => void;
+  inventory: Inventory;
+  // 云上的东西合进来之后，交回去更新界面
+  onItems: (inventory: Inventory) => void;
 }) {
   const session = authClient.useSession();
   const user = session.data?.user ?? null;
@@ -72,6 +93,8 @@ export function AccountDock({
   const applyRef = useRef(apply);
   const albumRef = useRef(album);
   const onHandleRef = useRef(onHandle);
+  const invRef = useRef(inventory);
+  const onItemsRef = useRef(onItems);
   const embed = isEmbed();
 
   useEffect(() => {
@@ -79,7 +102,9 @@ export function AccountDock({
     applyRef.current = apply;
     albumRef.current = album;
     onHandleRef.current = onHandle;
-  }, [collect, apply, album, onHandle]);
+    invRef.current = inventory;
+    onItemsRef.current = onItems;
+  }, [collect, apply, album, onHandle, inventory, onItems]);
 
   useEffect(() => {
     onHandleRef.current(handle);
@@ -107,6 +132,14 @@ export function AccountDock({
           applyRef.current(homeBody.home, photosBody.photos ?? []);
           setHandle(homeBody.handle ?? null);
         }
+        // 东西单独合：按样比新旧，两台设备各改各的不会互相盖掉
+        const itemsRes = await fetch("/api/items");
+        if (!itemsRes.ok) throw new Error("pull-items");
+        const { items } = await readJson<{ items: CloudItem[] }>(itemsRes);
+        if (cancel) return;
+        const merged = merge(invRef.current, items);
+        onItemsRef.current(merged);
+        await pushItems(merged);
         ready.current = true;
         setStatus("ok");
       } catch {
@@ -122,8 +155,8 @@ export function AccountDock({
     if (hidden || embed || !user || !ready.current) return;
     const id = window.setTimeout(() => {
       setStatus("pushing");
-      pushHome(collectRef.current())
-        .then((h) => {
+      Promise.all([pushHome(collectRef.current()), pushItems(invRef.current)])
+        .then(([h]) => {
           if (h) setHandle(h);
           setStatus("ok");
         })

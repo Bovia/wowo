@@ -1,7 +1,22 @@
 import type { Layout } from "./home";
 import { DEMO_ROOMS } from "./layouts";
 
-export type InvItem = { id: string; name: string; note?: string; count?: number; color: string; warn?: boolean };
+export type Category = "food" | "daily" | "clothes" | "appliance" | "other";
+
+export type InvItem = {
+  id: string;
+  name: string;
+  note?: string;
+  count?: number;
+  color: string;
+  warn?: boolean;
+  category?: Category;
+  price?: number;
+  boughtAt?: string; // YYYY-MM-DD
+  source?: "manual" | "receipt" | "photo";
+  extra?: Record<string, unknown>;
+  updatedAt?: number; // 毫秒，同步时谁新听谁的
+};
 
 export type Inventory = Record<string, InvItem[]>;
 
@@ -27,9 +42,14 @@ export function colorFor(name: string) {
 
 export const roomKey = (layout: Layout, room: string) => `${layout.id}/${room}`;
 
+// 样板间自带的东西 id 是 seed-0 这种，各屋会重，前面拼上屋子
+const seedId = (key: string, id: string) => (id.startsWith("seed-") ? `${key}#${id}` : id);
+
 export function loadInventory(): Inventory {
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}") as Inventory;
+    const inv = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Inventory;
+    for (const [key, items] of Object.entries(inv)) inv[key] = items.map((it) => ({ ...it, id: seedId(key, it.id) }));
+    return inv;
   } catch {
     return {};
   }
@@ -43,7 +63,19 @@ export function itemsFor(inv: Inventory, layout: Layout, room: string): InvItem[
   const stored = inv[roomKey(layout, room)];
   if (stored) return stored;
   if (!layout.demo) return [];
-  return (DEMO_ROOMS[room]?.items ?? []).map((it, i) => ({ id: `seed-${i}`, ...it }));
+  return (DEMO_ROOMS[room]?.items ?? []).map((it, i) => ({ id: seedId(roomKey(layout, room), `seed-${i}`), ...it }));
 }
 
 export const newId = () => Math.random().toString(36).slice(2, 10);
+
+const same = (a: InvItem, b: InvItem) => JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 });
+
+// 一屋的东西变了：改过的、新加的打上时间，拿走的记一笔删除，好同步到别的设备
+export function stampRoom(prev: InvItem[], next: InvItem[], now = Date.now()) {
+  const items = next.map((it) => {
+    const old = prev.find((p) => p.id === it.id);
+    return old?.updatedAt && same(old, it) ? old : { ...it, updatedAt: now };
+  });
+  const gone = prev.filter((p) => !next.some((it) => it.id === p.id)).map((p) => p.id);
+  return { items, gone };
+}

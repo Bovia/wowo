@@ -1,6 +1,5 @@
 import { saveAllDecor, type Spot } from "./decor";
 import { loadFamily, saveFamily, type Family } from "./family";
-import { loadInventory, saveInventory, type Inventory } from "./inventory";
 import { loadBattery, saveBattery, type Battery } from "./battery";
 import type { Scan } from "./scan";
 
@@ -13,7 +12,6 @@ export type HomePayload = {
   layoutId: string | null;
   scan: Scan | null;
   furniture: Record<string, Spot[]>;
-  inventory: Inventory;
   battery: Battery | null;
 };
 
@@ -35,14 +33,12 @@ export function collectLocal(extra?: Partial<HomePayload>): HomePayload {
     layoutId: extra?.layoutId !== undefined ? extra.layoutId : localStorage.getItem(LAYOUT_KEY),
     scan: extra?.scan !== undefined ? extra.scan : scan,
     furniture: extra?.furniture ?? JSON.parse(localStorage.getItem("wowo:decor") ?? "{}"),
-    inventory: extra?.inventory ?? loadInventory(),
     battery: extra?.battery ?? loadBattery(),
   };
 }
 
 export function writeLocal(home: HomePayload) {
   saveFamily(home.family);
-  saveInventory(home.inventory);
   if (home.battery) saveBattery(home.battery);
   saveAllDecor(home.furniture ?? {});
   if (home.layoutId) localStorage.setItem(LAYOUT_KEY, home.layoutId);

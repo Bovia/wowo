@@ -7,7 +7,7 @@ export async function GET() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const rows = await sql()`
-    select h.host_name, h.family, h.layout_id, h.scan, h.furniture, h.inventory, h.battery, r.handle
+    select h.host_name, h.family, h.layout_id, h.scan, h.furniture, h.battery, r.handle
     from homes h
     left join residents r on r.user_id = h.user_id
     where h.user_id = ${user.id}
@@ -20,7 +20,6 @@ export async function GET() {
     layoutId: (row.layout_id as string | null) ?? null,
     scan: (row.scan as HomePayload["scan"]) ?? null,
     furniture: (row.furniture as HomePayload["furniture"]) ?? {},
-    inventory: (row.inventory as HomePayload["inventory"]) ?? {},
     battery: row.battery as HomePayload["battery"],
   };
   const handle = row.handle ? String(row.handle) : await ensureResident(user.id);
@@ -34,7 +33,7 @@ export async function PUT(request: Request) {
   if (!body?.family) return Response.json({ error: "bad-home" }, { status: 400 });
   const host = (body.hostName || "我家").slice(0, 40);
   await sql()`
-    insert into homes (user_id, host_name, family, layout_id, scan, furniture, inventory, battery, updated_at)
+    insert into homes (user_id, host_name, family, layout_id, scan, furniture, battery, updated_at)
     values (
       ${user.id}::uuid,
       ${host},
@@ -42,7 +41,6 @@ export async function PUT(request: Request) {
       ${body.layoutId},
       ${body.scan ? JSON.stringify(body.scan) : null}::jsonb,
       ${JSON.stringify(body.furniture ?? {})}::jsonb,
-      ${JSON.stringify(body.inventory ?? {})}::jsonb,
       ${JSON.stringify(body.battery ?? null)}::jsonb,
       now()
     )
@@ -52,7 +50,6 @@ export async function PUT(request: Request) {
       layout_id = excluded.layout_id,
       scan = excluded.scan,
       furniture = excluded.furniture,
-      inventory = excluded.inventory,
       battery = excluded.battery,
       updated_at = now()
   `;

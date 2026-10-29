@@ -21,7 +21,8 @@ import {
   type Battery,
 } from "@/lib/battery";
 import { formatHour, nowHour, skyAt } from "@/lib/daylight";
-import { colorFor, itemsFor, loadInventory, newId, roomKey, saveInventory, type InvItem, type Inventory } from "@/lib/inventory";
+import { colorFor, itemsFor, loadInventory, newId, roomKey, saveInventory, stampRoom, type InvItem, type Inventory } from "@/lib/inventory";
+import { markGone } from "@/lib/items-sync";
 import { GUEST, hasFamily, loadFamily, saveFamily, type Family } from "@/lib/family";
 import { DEMOS, DEMO_ROOMS, TEMPLATES } from "@/lib/layouts";
 import {
@@ -38,6 +39,9 @@ import { scanToLayout, type Scan } from "@/lib/scan";
 import { AccountDock, cloudDropPhoto, cloudKeepPhoto } from "./account";
 import { FamilyEditor } from "./family-editor";
 import { SharePanel } from "./share-panel";
+import { ReceiptSheet, type ReceiptEntry, type ReceiptState } from "./receipt-sheet";
+import type { Receipt } from "@/lib/receipt";
+import { isEmbed } from "@/lib/embed";
 import { HouseScene, type IntroMode } from "./house-scene";
 import { writeLocal, type HomePayload } from "@/lib/snapshot";
 
@@ -218,10 +222,64 @@ export default function Wowo() {
   };
 
   const [inventory, setInventory] = useState<Inventory>(loadInventory);
-  const setRoomItems = (room: string, items: InvItem[]) => {
-    const next = { ...inventory, [roomKey(layout, room)]: items };
+  const putInventory = (next: Inventory) => {
     setInventory(next);
     saveInventory(next);
+  };
+  // 一次改好几个屋（截图识别出来的东西会分到不同屋）
+  const setRooms = (changes: Record<string, InvItem[]>) => {
+    const next = { ...inventory };
+    const gone: string[] = [];
+    for (const [room, items] of Object.entries(changes)) {
+      const stamped = stampRoom(itemsFor(inventory, layout, room), items);
+      next[roomKey(layout, room)] = stamped.items;
+      gone.push(...stamped.gone);
+    }
+    markGone(gone);
+    putInventory(next);
+  };
+  const setRoomItems = (room: string, items: InvItem[]) => setRooms({ [room]: items });
+
+  // 购物截图 → 认出买了什么 → 确认后分到各屋
+  const receiptInput = useRef<HTMLInputElement>(null);
+  const [receipt, setReceipt] = useState<ReceiptState | null>(null);
+  const pickReceipt = () => {
+    if (!handle) {
+      setReceipt({ status: "error", message: isEmbed() ? "演示里不能用截图识别，去窝窝里登录后再试。" : RECEIPT_ERRORS.login, retry: false });
+      return;
+    }
+    receiptInput.current?.click();
+  };
+  const readReceipt = async (file?: File | null) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    setReceipt({ status: "reading" });
+    try {
+      const body = new FormData();
+      body.append("image", await shrink(file), "receipt.jpg");
+      const res = await fetch("/api/receipt", { method: "POST", body });
+      const data = (await res.json()) as { receipt?: Receipt; error?: string };
+      if (!data.receipt) throw new Error(data.error ?? "failed");
+      setReceipt({ status: "ready", receipt: data.receipt });
+    } catch (err) {
+      const code = err instanceof Error ? err.message : "failed";
+      const retry = code !== "no-key" && code !== "login";
+      setReceipt({ status: "error", message: RECEIPT_ERRORS[code] ?? "没认出来，网络或模型出了点问题，待会再试。", retry });
+    }
+  };
+  const addFromReceipt = (entries: ReceiptEntry[], boughtAt: string | null) => {
+    const changes: Record<string, InvItem[]> = {};
+    for (const e of entries) {
+      const list = (changes[e.room] ??= [...itemsFor(inventory, layout, e.room)]);
+      const name = e.name.trim();
+      const known = { category: e.category, source: "receipt" as const, ...(e.price !== null ? { price: e.price } : {}), ...(boughtAt ? { boughtAt } : {}) };
+      const i = list.findIndex((it) => it.name === name);
+      // 屋里已经有同名的，加数量，不再多一格
+      if (i >= 0) list[i] = { ...list[i], ...known, count: (list[i].count ?? 1) + e.count, warn: false };
+      else list.push({ id: newId(), name, count: e.count, color: colorFor(name), ...(e.spec ? { note: e.spec } : {}), ...known });
+    }
+    setRooms(changes);
+    setReceipt(null);
+    setStepNote(`放进去 ${entries.length} 样`);
   };
   const alerts = useMemo(
     () =>
@@ -501,6 +559,8 @@ export default function Wowo() {
               <AccountDock
                 hidden={visiting}
                 onHandle={setHandle}
+                inventory={inventory}
+                onItems={putInventory}
                 album={album}
                 dirtyKey={JSON.stringify({ family, inventory, battery, decor, mineId, scan })}
                 collect={() => ({
@@ -509,13 +569,11 @@ export default function Wowo() {
                   layoutId: mineId,
                   scan,
                   furniture: loadAllDecor(),
-                  inventory,
                   battery,
                 })}
                 apply={(home: HomePayload, photos: Snap[]) => {
                   writeLocal(home);
                   setFamily(home.family);
-                  setInventory(home.inventory);
                   if (home.battery) setBattery(home.battery);
                   setScan(home.scan);
                   setMineId(home.layoutId);
@@ -871,12 +929,34 @@ export default function Wowo() {
               note={layout.demo ? DEMO_ROOMS[selectedRoom.id]?.note : undefined}
               items={itemsFor(inventory, layout, selectedRoom.id)}
               onChange={(items) => setRoomItems(selectedRoom.id, items)}
+              onScan={pickReceipt}
               onClose={() => setSelected(null)}
             />
           )}
 
           {uploadOpen && (
             <UploadPanel onClose={() => setUploadOpen(false)} onChoose={chooseTemplate} onScan={chooseScan} />
+          )}
+
+          <input
+            ref={receiptInput}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              void readReceipt(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          {receipt && (
+            <ReceiptSheet
+              state={receipt}
+              rooms={layout.rooms}
+              defaultRoom={selectedRoom?.id ?? layout.rooms[0].id}
+              onConfirm={addFromReceipt}
+              onRetry={pickReceipt}
+              onClose={() => setReceipt(null)}
+            />
           )}
 
           {shareOpen && (
@@ -1112,12 +1192,14 @@ function RoomCard({
   note,
   items,
   onChange,
+  onScan,
   onClose,
 }: {
   name: string;
   note?: string;
   items: InvItem[];
   onChange: (items: InvItem[]) => void;
+  onScan: () => void;
   onClose: () => void;
 }) {
   const [active, setActive] = useState<string | null>(null);
@@ -1203,7 +1285,25 @@ function RoomCard({
         >
           +
         </button>
+        <button
+          onClick={onScan}
+          aria-label="从购物截图添加"
+          className="grid min-h-[76px] place-items-center rounded-2xl border-2 border-dashed border-[#e6d3bb] px-1 text-[11px] leading-tight font-semibold text-[#ff8a5b] transition hover:border-[#ff8a5b]"
+        >
+          <span>
+            <span className="block text-lg leading-none">⧉</span>
+            购物截图
+          </span>
+        </button>
       </div>
+
+      {current && (current.price !== undefined || current.boughtAt) && (
+        <p className="fade-in mt-3 px-1 text-xs text-[#a2866f]">
+          {[current.boughtAt && `${Number(current.boughtAt.slice(5, 7))}月${Number(current.boughtAt.slice(8, 10))}日买的`, current.price !== undefined && `¥${current.price}`]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
 
       {current && (
         <div className="fade-in mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-2.5">
@@ -1277,6 +1377,13 @@ function RoomCard({
     </div>
   );
 }
+
+const RECEIPT_ERRORS: Record<string, string> = {
+  login: "截图识别要登录后才能用（认图要花钱）。点左上角「存到云上」登录一下。",
+  "no-key": "认图的 AI 还没配好，暂时用不了。",
+  "not-receipt": "这张好像不是购物截图。换一张订单页、购物车或小票试试。",
+  "bad-image": "图片太大或格式不对，换一张。",
+};
 
 const SCAN_ERRORS: Record<string, string> = {
   "no-key": "还没配置 AI 密钥，暂时认不了图。先选一个最接近的。",
