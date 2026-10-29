@@ -321,19 +321,39 @@ function framing(width: number, depth: number, aspect: number) {
   return { dir, dist: fit * 1.05 + extent * 0.3 };
 }
 
+type OrbitLike = { target: Vector3; update: () => void };
+
 function CameraRig({ width, depth }: { width: number; depth: number }) {
-  const { camera, size } = useThree();
+  const { camera, size, controls } = useThree();
   const portrait = useRef<boolean | null>(null);
-  useEffect(() => {
+  const boot = useRef(0);
+  const apply = (forceDir: boolean) => {
+    if (size.width < 2 || size.height < 2) return;
     const aspect = size.width / size.height;
+    const nowPortrait = aspect < PORTRAIT;
     const { dir, dist } = framing(width, depth, aspect);
-    if (portrait.current !== aspect < PORTRAIT) {
-      portrait.current = aspect < PORTRAIT;
+    if (forceDir || portrait.current !== nowPortrait) {
+      portrait.current = nowPortrait;
       camera.position.copy(dir);
     }
     camera.position.setLength(dist);
+    camera.lookAt(0, 0.8, 0);
     camera.updateProjectionMatrix();
-  }, [camera, size.width, size.height, width, depth]);
+    const orbit = controls as OrbitLike | null;
+    if (orbit?.target) {
+      orbit.target.set(0, 0.8, 0);
+      orbit.update();
+    }
+  };
+  useLayoutEffect(() => {
+    boot.current = 0;
+    apply(false);
+  }, [camera, controls, size.width, size.height, width, depth]);
+  useFrame(() => {
+    if (boot.current > 8) return;
+    boot.current += 1;
+    apply(boot.current <= 3);
+  });
   return null;
 }
 const HOUSE = "house-boxes";
@@ -536,7 +556,10 @@ export function HouseScene({
     if (a.layout !== layout.id) {
       Object.assign(a, { layout: layout.id, built: now, speed: TIMING.short.speed });
     }
-    const T = TIMING[introMode];
+    const portrait = size.width / Math.max(1, size.height) < PORTRAIT;
+    const T = portrait
+      ? { ...TIMING[introMode], from: Math.min(TIMING[introMode].from, 1.06), turns: TIMING[introMode].turns * 0.12 }
+      : TIMING[introMode];
     clock.current = a.skip ? Infinity : (now - a.built) * a.speed;
 
     const e = a.skip ? 1 : easeOutCubic(clamp01((now - a.start) / T.spin));
@@ -560,7 +583,6 @@ export function HouseScene({
     <>
       <Tick fn={tick} />
       <color attach="background" args={[sky.bg]} />
-      <CameraRig width={home.width} depth={home.depth} />
       <ambientLight intensity={sky.ambient} />
       <hemisphereLight args={[sky.hemiSky, sky.hemiGround, sky.hemi]} />
       <directionalLight
@@ -702,6 +724,7 @@ export function HouseScene({
         maxDistance={framing(home.width, home.depth, size.width / size.height).dist * 1.5}
         target={[0, 0.8, 0]}
       />
+      <CameraRig width={home.width} depth={home.depth} />
 
       <EffectComposer multisampling={0}>
         <N8AO aoRadius={0.6} distanceFalloff={0.6} intensity={2.2} color="#5a3e2b" quality="high" />
