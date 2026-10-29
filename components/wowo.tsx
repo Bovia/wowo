@@ -39,7 +39,8 @@ import { scanToLayout, type Scan } from "@/lib/scan";
 import { AccountDock, cloudDropPhoto, cloudKeepPhoto } from "./account";
 import { FamilyEditor } from "./family-editor";
 import { SharePanel } from "./share-panel";
-import { ReceiptSheet, type ReceiptEntry, type ReceiptState } from "./receipt-sheet";
+import { fromPhoto, fromReceipt, ReceiptSheet, type Draft, type ReceiptEntry, type ReceiptState } from "./receipt-sheet";
+import type { PhotoItems } from "@/lib/photo-items";
 import type { Receipt } from "@/lib/receipt";
 import { isEmbed } from "@/lib/embed";
 import { HouseScene, type IntroMode } from "./house-scene";
@@ -240,42 +241,57 @@ export default function Wowo() {
   };
   const setRoomItems = (room: string, items: InvItem[]) => setRooms({ [room]: items });
 
-  // 购物截图 → 认出买了什么 → 确认后分到各屋
-  const receiptInput = useRef<HTMLInputElement>(null);
+  // 购物截图 / 拍照 → 认出有什么 → 确认后放进屋里
+  const sightInput = useRef<HTMLInputElement>(null);
+  const sightSource = useRef<Draft["source"]>("receipt");
   const [receipt, setReceipt] = useState<ReceiptState | null>(null);
-  const pickReceipt = () => {
+  const pickSight = (source: Draft["source"]) => {
+    sightSource.current = source;
     if (!handle) {
-      setReceipt({ status: "error", message: isEmbed() ? "演示里不能用截图识别，去窝窝里登录后再试。" : RECEIPT_ERRORS.login, retry: false });
+      const message = isEmbed() ? "演示里不能用看图记东西，去窝窝里登录后再试。" : RECEIPT_ERRORS.login;
+      setReceipt({ status: "error", source, message, retry: false });
       return;
     }
-    receiptInput.current?.click();
+    sightInput.current?.click();
   };
-  const readReceipt = async (file?: File | null) => {
+  const readSight = async (file?: File | null) => {
     if (!file || !file.type.startsWith("image/")) return;
-    setReceipt({ status: "reading" });
+    const source = sightSource.current;
+    setReceipt({ status: "reading", source });
     try {
       const body = new FormData();
-      body.append("image", await shrink(file), "receipt.jpg");
-      const res = await fetch("/api/receipt", { method: "POST", body });
-      const data = (await res.json()) as { receipt?: Receipt; error?: string };
-      if (!data.receipt) throw new Error(data.error ?? "failed");
-      setReceipt({ status: "ready", receipt: data.receipt });
+      body.append("image", await shrink(file), `${source}.jpg`);
+      const res = await fetch(source === "photo" ? "/api/photo-items" : "/api/receipt", { method: "POST", body });
+      const data = (await res.json()) as { receipt?: Receipt; photo?: PhotoItems; error?: string };
+      const draft = data.receipt ? fromReceipt(data.receipt) : data.photo ? fromPhoto(data.photo) : null;
+      if (!draft) throw new Error(data.error ?? "failed");
+      setReceipt({ status: "ready", draft });
     } catch (err) {
       const code = err instanceof Error ? err.message : "failed";
       const retry = code !== "no-key" && code !== "login" && code !== "quota";
-      setReceipt({ status: "error", message: RECEIPT_ERRORS[code] ?? "没认出来，网络或模型出了点问题，待会再试。", retry });
+      setReceipt({ status: "error", source, message: RECEIPT_ERRORS[code] ?? "没认出来，网络或模型出了点问题，待会再试。", retry });
     }
   };
-  const addFromReceipt = (entries: ReceiptEntry[], boughtAt: string | null) => {
+  const addFromSight = (entries: ReceiptEntry[], boughtAt: string | null) => {
+    const source = receipt?.status === "ready" ? receipt.draft.source : "receipt";
     const changes: Record<string, InvItem[]> = {};
     for (const e of entries) {
       const list = (changes[e.room] ??= [...itemsFor(inventory, layout, e.room)]);
       const name = e.name.trim();
-      const known = { category: e.category, source: "receipt" as const, ...(e.price !== null ? { price: e.price } : {}), ...(boughtAt ? { boughtAt } : {}) };
-      const i = list.findIndex((it) => it.name === name);
-      // 屋里已经有同名的，加数量，不再多一格
-      if (i >= 0) list[i] = { ...list[i], ...known, count: (list[i].count ?? 1) + e.count, warn: false };
-      else list.push({ id: newId(), name, count: e.count, color: colorFor(name), ...(e.spec ? { note: e.spec } : {}), ...known });
+      const known = { category: e.category, source, ...(e.price !== null ? { price: e.price } : {}), ...(boughtAt ? { boughtAt } : {}) };
+      // 名字先找一模一样的，再找互相包含的（「鲜鸡蛋」就是「鸡蛋」）
+      const same = (a: string) => a.length >= 2 && name.length >= 2 && (a.includes(name) || name.includes(a));
+      const exact = list.findIndex((it) => it.name === name);
+      const i = exact >= 0 ? exact : list.findIndex((it) => same(it.name));
+      if (i >= 0) {
+        // 屋里已经有同名的：截图是又买了，加数量；拍照是现在就这么多，按照片改
+        list[i] =
+          source === "photo"
+            ? { ...list[i], ...known, count: e.count, warn: e.low, ...(e.spec ? { note: e.spec } : {}) }
+            : { ...list[i], ...known, count: (list[i].count ?? 1) + e.count, warn: false };
+      } else {
+        list.push({ id: newId(), name, count: e.count, color: colorFor(name), ...(e.spec ? { note: e.spec } : {}), ...(e.low ? { warn: true } : {}), ...known });
+      }
     }
     setRooms(changes);
     setReceipt(null);
@@ -929,7 +945,7 @@ export default function Wowo() {
               note={layout.demo ? DEMO_ROOMS[selectedRoom.id]?.note : undefined}
               items={itemsFor(inventory, layout, selectedRoom.id)}
               onChange={(items) => setRoomItems(selectedRoom.id, items)}
-              onScan={pickReceipt}
+              onScan={pickSight}
               onClose={() => setSelected(null)}
             />
           )}
@@ -939,12 +955,12 @@ export default function Wowo() {
           )}
 
           <input
-            ref={receiptInput}
+            ref={sightInput}
             type="file"
             accept="image/*"
             className="hidden"
             onChange={(e) => {
-              void readReceipt(e.target.files?.[0]);
+              void readSight(e.target.files?.[0]);
               e.target.value = "";
             }}
           />
@@ -953,8 +969,8 @@ export default function Wowo() {
               state={receipt}
               rooms={layout.rooms}
               defaultRoom={selectedRoom?.id ?? layout.rooms[0].id}
-              onConfirm={addFromReceipt}
-              onRetry={pickReceipt}
+              onConfirm={addFromSight}
+              onRetry={() => pickSight(sightSource.current)}
               onClose={() => setReceipt(null)}
             />
           )}
@@ -1199,7 +1215,7 @@ function RoomCard({
   note?: string;
   items: InvItem[];
   onChange: (items: InvItem[]) => void;
-  onScan: () => void;
+  onScan: (source: "receipt" | "photo") => void;
   onClose: () => void;
 }) {
   const [active, setActive] = useState<string | null>(null);
@@ -1285,16 +1301,24 @@ function RoomCard({
         >
           +
         </button>
-        <button
-          onClick={onScan}
-          aria-label="从购物截图添加"
-          className="grid min-h-[76px] place-items-center rounded-2xl border-2 border-dashed border-[#e6d3bb] px-1 text-[11px] leading-tight font-semibold text-[#ff8a5b] transition hover:border-[#ff8a5b]"
-        >
-          <span>
-            <span className="block text-lg leading-none">⧉</span>
-            购物截图
-          </span>
-        </button>
+        {(
+          [
+            ["photo", "◎", "拍一拍", "拍照认出这里有什么"],
+            ["receipt", "⧉", "购物截图", "从购物截图添加"],
+          ] as const
+        ).map(([source, icon, label, aria]) => (
+          <button
+            key={source}
+            onClick={() => onScan(source)}
+            aria-label={aria}
+            className="grid min-h-[76px] place-items-center rounded-2xl border-2 border-dashed border-[#e6d3bb] px-1 text-[11px] leading-tight font-semibold text-[#ff8a5b] transition hover:border-[#ff8a5b]"
+          >
+            <span>
+              <span className="block text-lg leading-none">{icon}</span>
+              {label}
+            </span>
+          </button>
+        ))}
       </div>
 
       {current && (current.price !== undefined || current.boughtAt) && (
@@ -1379,9 +1403,10 @@ function RoomCard({
 }
 
 const RECEIPT_ERRORS: Record<string, string> = {
-  login: "截图识别要登录后才能用（认图要花钱）。点左上角「存到云上」登录一下。",
+  login: "看图记东西要登录后才能用（认图要花钱）。点左上角「存到云上」登录一下。",
   "no-key": "认图的 AI 还没配好，暂时用不了。",
   quota: "认图的免费额度用完了，先手动加吧。",
+  "not-home": "没在照片里认出家里的东西。凑近一点、光线亮一点再拍一张。",
   "not-receipt": "这张好像不是购物截图。换一张订单页、购物车或小票试试。",
   "bad-image": "图片太大或格式不对，换一张。",
 };
