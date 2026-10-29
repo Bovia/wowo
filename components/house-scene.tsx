@@ -356,6 +356,37 @@ function CameraRig({ width, depth }: { width: number; depth: number }) {
   });
   return null;
 }
+// 放大后能平移看角落；能挪多远跟着缩放走：拉近能到墙边，拉远自己回到正中，不会把房子挪丢
+type OrbitPan = OrbitLike & { getDistance: () => number; minDistance: number; maxDistance: number };
+
+function PanGuard({ width, depth, free }: { width: number; depth: number; free: boolean }) {
+  useFrame(({ camera, controls, size }) => {
+    const orbit = controls as unknown as OrbitPan | null;
+    if (!orbit?.target) return;
+    const t = orbit.target;
+    if (!free) {
+      // 跟猫、开场时别的镜头在管，回来时从正中接手，免得跳一下
+      t.set(0, 0.8, 0);
+      return;
+    }
+    // 默认机位那么远就不许偏，越拉近能挪得越远
+    const home = framing(width, depth, size.width / Math.max(1, size.height)).dist;
+    const span = home - orbit.minDistance;
+    const close = span > 0 ? (home - orbit.getDistance()) / span : 0;
+    const reach = Math.min(1, Math.max(0, close * 1.5));
+    const x = Math.min(Math.max(t.x, (-width / 2) * reach), (width / 2) * reach);
+    const z = Math.min(Math.max(t.z, (-depth / 2) * reach), (depth / 2) * reach);
+    if (x !== t.x || z !== t.z) {
+      camera.position.x += x - t.x;
+      camera.position.z += z - t.z;
+      t.x = x;
+      t.z = z;
+    }
+    t.y = 0.8;
+  });
+  return null;
+}
+
 const HOUSE = "house-boxes";
 const camGoal = new Vector3();
 const head = new Vector3();
@@ -714,7 +745,8 @@ export function HouseScene({
       <OrbitControls
         makeDefault
         enabled={interactive && camFree && dragging === null}
-        enablePan={false}
+        enablePan
+        screenSpacePanning={false}
         enableDamping
         dampingFactor={0.08}
         rotateSpeed={0.7}
@@ -725,6 +757,7 @@ export function HouseScene({
         target={[0, 0.8, 0]}
       />
       <CameraRig width={home.width} depth={home.depth} />
+      <PanGuard width={home.width} depth={home.depth} free={interactive && camFree} />
 
       <EffectComposer multisampling={0}>
         <N8AO aoRadius={0.6} distanceFalloff={0.6} intensity={2.2} color="#5a3e2b" quality="high" />
