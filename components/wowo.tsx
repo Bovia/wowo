@@ -4,7 +4,7 @@ import { Canvas } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { planOf, rotated, seat, type Layout, type Placement } from "@/lib/home";
 import { applySpots, loadAllDecor, loadDecor, saveDecor, toSpots, type Spot } from "@/lib/decor";
-import { hasVisit, leaveVisit, readVisit, type HomeRef, type VisitCard } from "@/lib/visit";
+import { hasVisit, leaveVisit, readVisit, visitHandle, type HomeRef, type VisitCard } from "@/lib/visit";
 import { Ambience, SOUND_FOR, SOUND_NAME, type Sound } from "@/lib/ambience";
 import {
   applyEvent,
@@ -112,6 +112,8 @@ export default function Wowo() {
   const [chrome, setChrome] = useState(true);
   const [dest, setDest] = useState<{ x: number; z: number; n: number } | null>(null);
   const [stepNote, setStepNote] = useState<string | null>(null);
+  // 串门没敲开：等开场放完再说，不然看不见
+  const [missNote, setMissNote] = useState<string | null>(null);
   const [visitor] = useState(() => (hasFamily() ? loadFamily().me : GUEST));
   const homeLayout = (view === "mine" && mine) || DEMOS.find((d) => d.id === view) || DEMOS[0];
   const layout = visitLayout ?? homeLayout;
@@ -131,13 +133,17 @@ export default function Wowo() {
 
   useEffect(() => {
     if (!knocking) return;
+    const handle = visitHandle();
     readVisit().then((card) => {
       if (card && resolveHome(card.home)) {
         setVisit(card);
         setIntroMode("full");
         setPhase("intro");
         setIntroRun((n) => n + 1);
-      } else leaveVisit();
+      } else {
+        leaveVisit();
+        if (handle) setMissNote(`没找到 @${handle} 的窝`);
+      }
       setKnocking(false);
     });
   }, [knocking]);
@@ -166,6 +172,12 @@ export default function Wowo() {
     const id = window.setTimeout(() => setStepNote(null), 1800);
     return () => window.clearTimeout(id);
   }, [stepNote]);
+
+  useEffect(() => {
+    if (!missNote || phase !== "home") return;
+    const id = window.setTimeout(() => setMissNote(null), 3500);
+    return () => window.clearTimeout(id);
+  }, [missNote, phase]);
 
   const replay = () => {
     setSelected(null);
@@ -344,6 +356,7 @@ export default function Wowo() {
   const visitFurniture = useMemo(() => (visit && visitLayout ? applySpots(visitLayout, visit.decor) : null), [visit, visitLayout]);
   const furniture = visiting ? visitFurniture : homeFurniture;
   const [shareOpen, setShareOpen] = useState(false);
+  const [handle, setHandle] = useState<string | null>(null);
   const shareCard = (host: string): VisitCard => ({
     v: 1,
     host,
@@ -487,6 +500,7 @@ export default function Wowo() {
               <span className="ink text-2xl font-extrabold tracking-widest text-[#6b4a35]">窝窝</span>
               <AccountDock
                 hidden={visiting}
+                onHandle={setHandle}
                 album={album}
                 dirtyKey={JSON.stringify({ family, inventory, battery, decor, mineId, scan })}
                 collect={() => ({
@@ -711,9 +725,9 @@ export default function Wowo() {
             </p>
           </div>
 
-          {stepNote && (
+          {(stepNote ?? missNote) && (
             <div className="card-pop pointer-events-none absolute inset-x-0 top-[22%] z-10 mx-auto w-fit rounded-full bg-[#fffaf2]/95 px-4 py-1.5 text-sm font-semibold text-[#6b4a35] shadow-[0_8px_20px_rgba(107,74,53,0.16)]">
-              {stepNote}
+              {stepNote ?? missNote}
             </div>
           )}
 
@@ -869,6 +883,7 @@ export default function Wowo() {
             <SharePanel
               defaultHost={family.me.name === "我" ? "" : family.me.name}
               card={shareCard}
+              handle={handle}
               onClose={() => setShareOpen(false)}
             />
           )}

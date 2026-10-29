@@ -30,13 +30,36 @@ export async function visitLink(card: VisitCard) {
   return `${location.origin}${location.pathname}${PREFIX}${toB64(packed)}`;
 }
 
-export const hasVisit = () => location.hash.startsWith(PREFIX);
+// 活的串门：/@门牌号，打开的是对方现在的家
+export function visitHandle(): string | null {
+  const m = location.pathname.match(/^\/@([^/]+)\/?$/);
+  return m ? decodeURIComponent(m[1]).toLowerCase() : null;
+}
+
+export const liveLink = (handle: string) => `${location.origin}/@${handle}`;
+
+export const hasVisit = () => visitHandle() !== null || location.hash.startsWith(PREFIX);
 
 export function leaveVisit() {
-  history.replaceState(null, "", location.pathname + location.search);
+  const path = visitHandle() ? "/" : location.pathname;
+  history.replaceState(null, "", path + location.search);
+}
+
+async function readLive(handle: string): Promise<VisitCard | null> {
+  try {
+    const res = await fetch(`/api/visit/${encodeURIComponent(handle)}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const { card } = (await res.json()) as { card: VisitCard };
+    if (card?.v !== 1 || !card.home || !card.family?.me || !Array.isArray(card.family.cats)) return null;
+    return card;
+  } catch {
+    return null;
+  }
 }
 
 export async function readVisit(): Promise<VisitCard | null> {
+  const handle = visitHandle();
+  if (handle) return readLive(handle);
   if (!hasVisit()) return null;
   try {
     const raw = await pipe(fromB64(location.hash.slice(PREFIX.length)), new DecompressionStream("deflate-raw"));

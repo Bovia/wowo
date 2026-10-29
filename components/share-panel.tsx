@@ -1,23 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { visitLink, type VisitCard } from "@/lib/visit";
+import { liveLink, visitLink, type VisitCard } from "@/lib/visit";
 
 export function SharePanel({
   defaultHost,
   card,
+  handle,
   onClose,
 }: {
   defaultHost: string;
   card: (host: string) => VisitCard;
+  // 登录了就有门牌号，发活的链接；没登录发快照
+  handle: string | null;
   onClose: () => void;
 }) {
   const [host, setHost] = useState(defaultHost);
-  const [link, setLink] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(handle ? liveLink(handle) : null);
   const [note, setNote] = useState<string | null>(null);
   const canShare = typeof navigator.share === "function";
 
   const make = async () => {
+    if (handle) return liveLink(handle);
     const url = await visitLink(card(host.trim() || "朋友"));
     setLink(url);
     return url;
@@ -52,26 +56,35 @@ export function SharePanel({
             ×
           </button>
         </div>
-        <p className="mt-1 text-xs leading-relaxed text-[#a2866f]">
-          朋友打开链接就能来逛，只能看不能改。户型、摆设、家里人和猫会带上，物品清单不会。之后家里有变化，重新发一次就好。
-        </p>
+        {handle ? (
+          <p className="mt-1 text-xs leading-relaxed text-[#a2866f]">
+            朋友打开的就是你<b>现在</b>的窝，只能看不能改。你挪了家具、换了猫，他们下次来看到的也会变。物品清单不会给别人看。
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-xs leading-relaxed text-[#a2866f]">
+              朋友打开链接就能来逛，只能看不能改。户型、摆设、家里人和猫会带上，物品清单不会。之后家里有变化，重新发一次就好。
+            </p>
 
-        <label className="mt-4 block text-sm text-[#8b6b55]">
-          门牌上写
-          <div className="mt-1 flex items-center gap-2">
-            <input
-              value={host}
-              onChange={(e) => {
-                setHost(e.target.value);
-                setLink(null);
-              }}
-              maxLength={12}
-              placeholder="比如：小林"
-              className="min-w-0 flex-1 rounded-xl border border-[#eadbc6] bg-white px-3 py-2 text-base text-[#6b4a35] outline-none focus:border-[#ff8a5b] sm:text-sm"
-            />
-            <span className="shrink-0 text-sm text-[#8b6b55]">的窝</span>
-          </div>
-        </label>
+            <label className="mt-4 block text-sm text-[#8b6b55]">
+              门牌上写
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  value={host}
+                  onChange={(e) => {
+                    setHost(e.target.value);
+                    setLink(null);
+                  }}
+                  maxLength={12}
+                  placeholder="比如：小林"
+                  className="min-w-0 flex-1 rounded-xl border border-[#eadbc6] bg-white px-3 py-2 text-base text-[#6b4a35] outline-none focus:border-[#ff8a5b] sm:text-sm"
+                />
+                <span className="shrink-0 text-sm text-[#8b6b55]">的窝</span>
+              </div>
+            </label>
+            <p className="mt-2 text-xs text-[#a2866f]">登录后会有自己的门牌号，朋友看到的就是你现在的家。</p>
+          </>
+        )}
 
         {link && (
           <input

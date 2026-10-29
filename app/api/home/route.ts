@@ -1,19 +1,16 @@
 import { sql } from "@/lib/db";
+import { ensureResident } from "@/lib/resident";
 import { currentUser } from "@/lib/session";
 import type { HomePayload } from "@/lib/snapshot";
-
-function slugFor(email: string | undefined, userId: string) {
-  const base = (email?.split("@")[0] ?? "wowo").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 16) || "wowo";
-  return `${base}-${userId.replaceAll("-", "").slice(0, 6)}`;
-}
 
 export async function GET() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const rows = await sql()`
-    select host_name, family, layout_id, scan, furniture, inventory, battery, slug
-    from homes
-    where user_id = ${user.id}
+    select h.host_name, h.family, h.layout_id, h.scan, h.furniture, h.inventory, h.battery, r.handle
+    from homes h
+    left join residents r on r.user_id = h.user_id
+    where h.user_id = ${user.id}
   `;
   const row = rows[0];
   if (!row) return Response.json({ home: null });
@@ -26,7 +23,8 @@ export async function GET() {
     inventory: (row.inventory as HomePayload["inventory"]) ?? {},
     battery: row.battery as HomePayload["battery"],
   };
-  return Response.json({ home, slug: row.slug });
+  const handle = row.handle ? String(row.handle) : await ensureResident(user.id);
+  return Response.json({ home, handle });
 }
 
 export async function PUT(request: Request) {
@@ -34,13 +32,11 @@ export async function PUT(request: Request) {
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const body = (await request.json()) as HomePayload;
   if (!body?.family) return Response.json({ error: "bad-home" }, { status: 400 });
-  const slug = slugFor(user.email, user.id);
   const host = (body.hostName || "我家").slice(0, 40);
   await sql()`
-    insert into homes (user_id, slug, host_name, family, layout_id, scan, furniture, inventory, battery, updated_at)
+    insert into homes (user_id, host_name, family, layout_id, scan, furniture, inventory, battery, updated_at)
     values (
       ${user.id}::uuid,
-      ${slug},
       ${host},
       ${JSON.stringify(body.family)}::jsonb,
       ${body.layoutId},
@@ -60,5 +56,6 @@ export async function PUT(request: Request) {
       battery = excluded.battery,
       updated_at = now()
   `;
-  return Response.json({ ok: true, slug });
+  const handle = await ensureResident(user.id);
+  return Response.json({ ok: true, handle });
 }

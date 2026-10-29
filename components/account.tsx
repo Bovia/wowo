@@ -28,6 +28,8 @@ async function pushHome(home: HomePayload) {
     body: JSON.stringify(home),
   });
   if (!res.ok) throw new Error("push-home");
+  const body = await readJson<{ handle?: string }>(res);
+  return body.handle ?? null;
 }
 
 async function uploadAlbum(album: Snap[]) {
@@ -47,12 +49,14 @@ export function AccountDock({
   apply,
   album,
   dirtyKey,
+  onHandle,
 }: {
   hidden: boolean;
   collect: () => HomePayload;
   apply: (home: HomePayload, photos: Snap[]) => void;
   album: Snap[];
   dirtyKey: string;
+  onHandle: (handle: string | null) => void;
 }) {
   const session = authClient.useSession();
   const user = session.data?.user ?? null;
@@ -62,17 +66,24 @@ export function AccountDock({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
+  const [handle, setHandle] = useState<string | null>(null);
   const ready = useRef(false);
   const collectRef = useRef(collect);
   const applyRef = useRef(apply);
   const albumRef = useRef(album);
+  const onHandleRef = useRef(onHandle);
   const embed = isEmbed();
 
   useEffect(() => {
     collectRef.current = collect;
     applyRef.current = apply;
     albumRef.current = album;
-  }, [collect, apply, album]);
+    onHandleRef.current = onHandle;
+  }, [collect, apply, album, onHandle]);
+
+  useEffect(() => {
+    onHandleRef.current(handle);
+  }, [handle]);
 
   useEffect(() => {
     if (hidden || embed || !user || ready.current) return;
@@ -83,17 +94,18 @@ export function AccountDock({
         const homeRes = await fetch("/api/home");
         // 读失败不能当成「云上是空的」，否则会拿本机这份去盖
         if (!homeRes.ok) throw new Error("pull-home");
-        const homeBody = await readJson<{ home: HomePayload | null }>(homeRes);
+        const homeBody = await readJson<{ home: HomePayload | null; handle?: string }>(homeRes);
         if (cancel) return;
         if (!homeBody.home) {
           setStatus("pushing");
-          await pushHome(collectRef.current());
+          setHandle(await pushHome(collectRef.current()));
           await uploadAlbum(albumRef.current);
         } else {
           const photosRes = await fetch("/api/photos");
           const photosBody = photosRes.ok ? await readJson<{ photos: Snap[] }>(photosRes) : { photos: [] };
           if (cancel) return;
           applyRef.current(homeBody.home, photosBody.photos ?? []);
+          setHandle(homeBody.handle ?? null);
         }
         ready.current = true;
         setStatus("ok");
@@ -111,7 +123,10 @@ export function AccountDock({
     const id = window.setTimeout(() => {
       setStatus("pushing");
       pushHome(collectRef.current())
-        .then(() => setStatus("ok"))
+        .then((h) => {
+          if (h) setHandle(h);
+          setStatus("ok");
+        })
         .catch(() => setStatus("error"));
     }, 1400);
     return () => window.clearTimeout(id);
@@ -150,6 +165,7 @@ export function AccountDock({
   const signOut = async () => {
     ready.current = false;
     await authClient.signOut();
+    setHandle(null);
     setOpen(false);
     setStatus("idle");
   };
@@ -176,6 +192,7 @@ export function AccountDock({
                     ? "这次没同步上，待会再试试。"
                     : "正在把家里人存到云上…"}
               </p>
+              {handle && <HandleRow handle={handle} onChange={setHandle} />}
               <button
                 onClick={signOut}
                 className="mt-3 rounded-full bg-[#f6ecdf] px-3 py-1.5 text-xs font-semibold text-[#8b6b55] hover:bg-[#efe1cc]"
@@ -260,4 +277,107 @@ export async function cloudDropPhoto(id: string) {
   const { data } = await authClient.getSession();
   if (!data?.user) return;
   await fetch(`/api/photos?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// 门牌号：镇上别人认得你的名字，串门链接就是 /@门牌号
+function HandleRow({ handle, onChange }: { handle: string; onChange: (handle: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(handle);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const save = async () => {
+    const next = draft.trim().toLowerCase();
+    if (next === handle) return setEditing(false);
+    setBusy(true);
+    setNote(null);
+    try {
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle: next }),
+      });
+      const body = await readJson<{ handle?: string; message?: string }>(res);
+      if (!res.ok || !body.handle) {
+        setNote(body.message ?? "没改成，待会再试");
+        return;
+      }
+      onChange(body.handle);
+      setEditing(false);
+    } catch {
+      setNote("没改成，待会再试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-[#f6ecdf] px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-[11px] text-[#a2866f]">门牌号</p>
+          <p className="truncate text-sm font-semibold text-[#6b4a35]">@{handle}</p>
+        </div>
+        <button
+          onClick={() => {
+            setDraft(handle);
+            setNote(null);
+            setEditing(true);
+          }}
+          className="shrink-0 text-xs font-semibold text-[#ff8a5b]"
+        >
+          改
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="mt-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <label className="block text-[11px] text-[#a2866f]" htmlFor="wowo-handle">
+        门牌号（朋友串门用）
+      </label>
+      <div className="mt-1 flex items-center rounded-xl border border-[#ead9c4] bg-white px-3 focus-within:border-[#ff8a5b]">
+        <span className="text-base text-[#a2866f]">@</span>
+        <input
+          id="wowo-handle"
+          autoFocus
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={20}
+          value={draft}
+          onFocus={(e) => e.currentTarget.select()}
+          // 打的时候就转小写、去掉不认的字，别等提交才报错
+          onChange={(e) => setDraft(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+          className="min-w-0 flex-1 bg-transparent py-2 pl-0.5 text-base text-[#6b4a35] outline-none"
+        />
+      </div>
+      <p className={`mt-1 text-[11px] ${note ? "text-[#ff8a5b]" : "text-[#a2866f]"}`}>
+        {note ?? "小写字母、数字、- 或 _，3–20 位"}
+      </p>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="submit"
+          disabled={busy || !draft.trim()}
+          className="flex-1 rounded-full bg-[#6b4a35] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+        >
+          {busy ? "…" : "就用这个"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="flex-1 rounded-full bg-[#f6ecdf] px-3 py-1.5 text-xs font-semibold text-[#8b6b55]"
+        >
+          算了
+        </button>
+      </div>
+    </form>
+  );
 }
