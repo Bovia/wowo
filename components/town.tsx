@@ -8,10 +8,10 @@ import { Color, Object3D, Vector3, type Group, type InstancedMesh, type Perspect
 import { skyAt, nowHour, sunPosition } from "@/lib/daylight";
 import { applySpots } from "@/lib/decor";
 import type { Person } from "@/lib/family";
-import { buildHome, type Box, type Layout } from "@/lib/home";
+import { buildHome, H_OUT, type Box, type Layout } from "@/lib/home";
 import { DEMOS, TEMPLATES } from "@/lib/layouts";
 import { scanToLayout } from "@/lib/scan";
-import { LOT_MAX, NPCS, plotAt, scenery, STREET, townSize, WALK, type Plot, type TownHome } from "@/lib/town";
+import { houseZ, LOT_MAX, TOWER_MAX, NPCS, plotAt, roofBoxes, roofColor, scenery, STREET, townSize, WALK, yardBoxes, type Plot, type TownHome } from "@/lib/town";
 import { visitLink, type HomeRef } from "@/lib/visit";
 import { catParts, Parts, personParts } from "./creatures";
 
@@ -25,31 +25,33 @@ function layoutOf(home: HomeRef): Layout | null {
   }
 }
 
-type Lot = { home: TownHome; plot: Plot; boxes: Box[] };
+type Lot = { home: TownHome; plot: Plot; boxes: Box[]; roof: Box[]; eave: number; center: [number, number] };
 
-// 把一户的窝缩小、摆到它那块地上；朝街的那面对着街
-function lotOf(home: TownHome, plot: Plot): Lot | null {
+// 把一户的窝缩小、摆到它那块地上：房子靠里，前面是院子，头上一个能掀开的屋顶
+function lotOf(home: TownHome, plot: Plot, index: number): Lot | null {
   const layout = layoutOf(home.home);
   if (!layout) return null;
   const built = buildHome(layout, applySpots(layout, home.decor) ?? undefined);
-  const s = Math.min(0.36, LOT_MAX.w / built.width, LOT_MAX.d / built.depth);
-  const pad = 0.25;
+  const s = Math.min(0.32, LOT_MAX.w / built.width, LOT_MAX.d / built.depth);
   const [w, d] = [built.width * s, built.depth * s];
+  const cz = houseZ(plot, d);
+  const pad = 0.12;
   const boxes: Box[] = [
-    { x0: plot.x - w / 2 - pad, y0: 0, z0: plot.z - d / 2 - pad, x1: plot.x + w / 2 + pad, y1: 0.05, z1: plot.z + d / 2 + pad, color: 0xd9c9a9, room: null },
+    { x0: plot.x - w / 2 - pad, y0: 0, z0: cz - d / 2 - pad, x1: plot.x + w / 2 + pad, y1: 0.05, z1: cz + d / 2 + pad, color: 0xd9c9a9, room: null },
+    ...yardBoxes(plot, d, index + 1),
   ];
   for (const b of built.boxes) {
     boxes.push({
       ...b,
       x0: plot.x - w / 2 + b.x0 * s,
       x1: plot.x - w / 2 + b.x1 * s,
-      z0: plot.z - d / 2 + b.z0 * s,
-      z1: plot.z - d / 2 + b.z1 * s,
+      z0: cz - d / 2 + b.z0 * s,
+      z1: cz - d / 2 + b.z1 * s,
       y0: 0.05 + b.y0 * s,
       y1: 0.05 + b.y1 * s,
     });
   }
-  return { home, plot, boxes };
+  return { home, plot, boxes, roof: roofBoxes(plot.x, cz, w, d, roofColor(index)), eave: 0.05 + H_OUT * s, center: [plot.x, cz] };
 }
 
 const dummy = new Object3D();
@@ -120,6 +122,68 @@ function TownBoxes({
   );
 }
 
+// 屋顶：远看是个完整的小房子；镜头凑近或鼠标指着，屋顶飘起来淡掉，能看见屋里
+// 看全镇时镜头有多远（Rig 算的）；拉近到它的一半多一点，屋顶开始掀
+const view = { fit: 40 };
+const roofPos = new Vector3();
+function Roof({ lot, index, hovered, onHover, onPick }: { lot: Lot; index: number; hovered: boolean; onHover: (i: number | null) => void; onPick: (i: number) => void }) {
+  const group = useRef<Group>(null);
+  const mesh = useRef<InstancedMesh>(null);
+  const lift = useRef(0);
+  useLayoutEffect(() => {
+    const m = mesh.current;
+    if (!m) return;
+    lot.roof.forEach((b, i) => {
+      dummy.position.set((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2);
+      dummy.scale.set(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
+      dummy.updateMatrix();
+      m.setMatrixAt(i, dummy.matrix);
+      m.setColorAt(i, tint.setHex(b.color));
+    });
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    m.computeBoundingSphere();
+  }, [lot]);
+  useFrame(({ camera, controls }, dt) => {
+    const g = group.current;
+    const m = mesh.current;
+    if (!g || !m) return;
+    // 稍微拉近一点（全镇视角的七成）：所有屋顶掀开，能看见各家屋里
+    const target = (controls as unknown as { target?: Vector3 } | null)?.target ?? roofPos.set(0, 0, 0);
+    const near = camera.position.distanceTo(target) < view.fit * 0.72;
+    const goal = near ? 1 : hovered ? 0.6 : 0;
+    lift.current += (goal - lift.current) * Math.min(1, dt * 5);
+    const k = lift.current;
+    g.position.y = lot.eave + k * 1.6;
+    const mat = m.material as { opacity: number; transparent: boolean; depthWrite: boolean };
+    mat.opacity = 1 - k * 0.9;
+    mat.transparent = k > 0.01;
+    mat.depthWrite = k < 0.5;
+    g.visible = k < 0.98;
+  });
+  return (
+    <group ref={group} position={[0, lot.eave, 0]}>
+      <instancedMesh
+        ref={mesh}
+        args={[undefined, undefined, lot.roof.length]}
+        castShadow
+        onPointerMove={(e) => {
+          e.stopPropagation();
+          onHover(index);
+        }}
+        onPointerOut={() => onHover(null)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (e.delta <= 6) onPick(index);
+        }}
+      >
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial roughness={0.8} metalness={0} />
+      </instancedMesh>
+    </group>
+  );
+}
+
 const WALKER = 0.42;
 
 // 镇上溜达的人和猫：在自家门口那段街上走走停停
@@ -178,7 +242,7 @@ function Signs({ lots, els }: { lots: Lot[]; els: React.RefObject<(HTMLButtonEle
   return null;
 }
 
-function Rig({ halfW, halfD }: { halfW: number; halfD: number }) {
+function Rig({ halfW, halfD, back }: { halfW: number; halfD: number; back: number }) {
   const size = useThree((s) => s.size);
   const get = useThree((s) => s.get);
   useLayoutEffect(() => {
@@ -187,8 +251,13 @@ function Rig({ halfW, halfD }: { halfW: number; halfD: number }) {
     const cam = camera as PerspectiveCamera;
     cam.aspect = size.width / Math.max(1, size.height);
     cam.updateProjectionMatrix();
-    const dir = new Vector3(0.55, 0.75, 0.62).normalize();
-    const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sz) => new Vector3(sx * halfW, 0, sz * halfD)));
+    // 竖屏把镜头转到街的一头，街变成上下走向，长条的镇子才铺得满手机屏
+    const dir = (cam.aspect < 0.8 ? new Vector3(1, 0.92, 0.12) : new Vector3(0.55, 0.75, 0.62)).normalize();
+    // 地的四个角，再加后排高楼的楼顶
+    const corners = [
+      ...[-1, 1].flatMap((sx) => [new Vector3(sx * halfW, 0, halfD), new Vector3(sx * halfW, 0, -halfD - back)]),
+      ...[-1, 1].map((sx) => new Vector3(sx * halfW, TOWER_MAX, -halfD - back)),
+    ];
     let dist = Math.hypot(halfW, halfD) * 2;
     for (let i = 0; i < 6; i++) {
       camera.position.copy(dir).multiplyScalar(dist);
@@ -202,7 +271,8 @@ function Rig({ halfW, halfD }: { halfW: number; halfD: number }) {
     }
     camera.position.copy(dir).multiplyScalar(dist);
     camera.lookAt(0, 0, 0);
-  }, [get, size.width, size.height, halfW, halfD]);
+    view.fit = dist;
+  }, [get, size.width, size.height, halfW, halfD, back]);
   // 拖着挪不许把镇子挪丢
   useFrame(({ controls }) => {
     const t = (controls as unknown as { target?: { x: number; z: number; y: number } } | null)?.target;
@@ -233,9 +303,9 @@ export default function Town() {
     };
   }, []);
 
-  const lots = useMemo(() => homes.map((h, i) => lotOf(h, plotAt(i))).filter((l): l is Lot => l !== null), [homes]);
+  const lots = useMemo(() => homes.map((h, i) => lotOf(h, plotAt(i), i)).filter((l): l is Lot => l !== null), [homes]);
   const { boxes, owner } = useMemo(() => {
-    const env = scenery(lots.length);
+    const env = scenery(lots.length, sky.lamps > 0.4);
     const all = [...env, ...lots.flatMap((l) => l.boxes)];
     const own = new Int16Array(all.length).fill(-1);
     let k = env.length;
@@ -244,8 +314,8 @@ export default function Town() {
       k += l.boxes.length;
     });
     return { boxes: all, owner: own };
-  }, [lots]);
-  const { halfW, halfD } = townSize(lots.length);
+  }, [lots, sky.lamps]);
+  const { halfW, halfD, back } = townSize(lots.length);
 
   useEffect(() => {
     document.body.style.cursor = hovered !== null ? "pointer" : "";
@@ -257,9 +327,10 @@ export default function Town() {
     if (!home || going) return;
     setGoing(home.host);
     // 真人：活的串门；样板间邻居：打包一张串门卡
+    // 带上 from=town，串完门「回镇上」
     window.location.href = home.npc
-      ? await visitLink({ v: 1, host: home.host, home: home.home, decor: home.decor, family: home.family })
-      : `/@${home.handle}`;
+      ? (await visitLink({ v: 1, host: home.host, home: home.home, decor: home.decor, family: home.family })).replace("/#", "/?from=town#")
+      : `/@${home.handle}?from=town`;
   };
 
   return (
@@ -287,6 +358,7 @@ export default function Town() {
           const people: Person[] = [f.me, ...(f.partner ? [f.partner] : [])];
           return (
             <group key={l.home.handle}>
+              <Roof lot={l} index={i} hovered={hovered === i} onHover={setHovered} onPick={visit} />
               {people.map((p, k) => (
                 <Walker key={`p${k}`} parts={personParts(p)} home={l.plot} range={2.6} speed={0.55} seed={i * 7 + k} />
               ))}
@@ -308,7 +380,7 @@ export default function Town() {
           // 竖屏要退得很远才装得下整条街，别让这里把机位拽回来
           maxDistance={Math.max(halfW, halfD) * 12 + 20}
         />
-        <Rig halfW={halfW} halfD={halfD} />
+        <Rig halfW={halfW} halfD={halfD} back={back} />
         <Signs lots={lots} els={signs} />
       </Canvas>
 

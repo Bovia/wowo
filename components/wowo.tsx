@@ -1,6 +1,7 @@
 "use client";
 
 import { Canvas } from "@react-three/fiber";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { planOf, rotated, seat, type Layout, type Placement } from "@/lib/home";
 import { applySpots, loadAllDecor, loadDecor, saveDecor, toSpots, type Spot } from "@/lib/decor";
@@ -155,7 +156,14 @@ export default function Wowo() {
     });
   }, [knocking]);
 
+  // 从小镇点进来串门的，离开就回镇上
+  const [fromTown] = useState(() => new URLSearchParams(location.search).get("from") === "town");
+  const router = useRouter();
   const goHome = () => {
+    if (fromTown) {
+      router.push("/town");
+      return;
+    }
     leaveVisit();
     setVisit(null);
     setEye(false);
@@ -852,7 +860,7 @@ export default function Wowo() {
                 onClick={goHome}
                 className="shrink-0 rounded-full bg-[#6b4a35] px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm sm:text-sm"
               >
-                离开
+                {fromTown ? "回镇上" : "离开"}
               </button>
               {chrome && follow === null && (
                 <div className="no-scrollbar flex min-w-0 justify-center gap-1.5 overflow-x-auto">
