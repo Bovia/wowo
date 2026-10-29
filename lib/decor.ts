@@ -4,12 +4,22 @@ export type Spot = { x: number; z: number; side: Side; room: string; y?: number 
 
 const KEY = "wowo:decor";
 
-function loadAll(): Record<string, Spot[]> {
+export function loadAllDecor(): Record<string, Spot[]> {
   try {
     return JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {};
   } catch {
     return {};
   }
+}
+
+function loadAll(): Record<string, Spot[]> {
+  return loadAllDecor();
+}
+
+export function saveAllDecor(all: Record<string, Spot[]>) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(all));
+  } catch {}
 }
 
 export const toSpots = (furniture: Placement[]): Spot[] =>
@@ -30,7 +40,5 @@ export function saveDecor(layout: Layout, furniture: Placement[] | null) {
   const all = loadAll();
   if (furniture) all[layout.id] = toSpots(furniture);
   else delete all[layout.id];
-  try {
-    localStorage.setItem(KEY, JSON.stringify(all));
-  } catch {}
+  saveAllDecor(all);
 }

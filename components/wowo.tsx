@@ -3,7 +3,7 @@
 import { Canvas } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { planOf, rotated, seat, type Layout, type Placement } from "@/lib/home";
-import { applySpots, loadDecor, saveDecor, toSpots } from "@/lib/decor";
+import { applySpots, loadAllDecor, loadDecor, saveDecor, toSpots, type Spot } from "@/lib/decor";
 import { hasVisit, leaveVisit, readVisit, type HomeRef, type VisitCard } from "@/lib/visit";
 import { Ambience, SOUND_FOR, SOUND_NAME, type Sound } from "@/lib/ambience";
 import {
@@ -35,9 +35,11 @@ import {
   type Snap,
 } from "@/lib/polaroid";
 import { scanToLayout, type Scan } from "@/lib/scan";
+import { AccountDock, cloudDropPhoto, cloudKeepPhoto } from "./account";
 import { FamilyEditor } from "./family-editor";
 import { SharePanel } from "./share-panel";
 import { HouseScene, type IntroMode } from "./house-scene";
+import { writeLocal, type HomePayload } from "@/lib/snapshot";
 
 const SEEN_KEY = "wowo:intro-seen";
 const MINE_KEY = "wowo:my-layout";
@@ -74,6 +76,16 @@ function resolveHome(home: HomeRef): Layout | null {
   if ("d" in home) return DEMOS.find((d) => d.id === home.d) ?? null;
   if ("t" in home) return TEMPLATES.find((t) => t.id === home.t) ?? null;
   return safeLayout(home.s);
+}
+
+function decorFromSpots(furniture: Record<string, Spot[]>, extra: Layout | null) {
+  const layouts = [...DEMOS, ...TEMPLATES, ...(extra ? [extra] : [])];
+  const out: Record<string, Placement[] | null> = {};
+  for (const [id, spots] of Object.entries(furniture ?? {})) {
+    const layout = layouts.find((l) => l.id === id);
+    if (layout) out[id] = applySpots(layout, spots);
+  }
+  return out;
 }
 
 export default function Wowo() {
@@ -310,11 +322,13 @@ export default function Wowo() {
   const keepSnap = (s: Snap) => {
     setAlbum(saveAlbum([s, ...album.filter((a) => a.id !== s.id)]));
     setSnap(null);
+    void cloudKeepPhoto(s);
   };
 
   const dropSnap = (id: string) => {
     setAlbum(saveAlbum(album.filter((a) => a.id !== id)));
     setSnap(null);
+    void cloudDropPhoto(id);
   };
 
   const [decorating, setDecorating] = useState(false);
@@ -471,6 +485,31 @@ export default function Wowo() {
               className={`flex items-center gap-3 sm:col-start-1 sm:row-start-1 ${chrome && follow === null ? "pointer-events-auto" : "pointer-events-none"}`}
             >
               <span className="ink text-2xl font-extrabold tracking-widest text-[#6b4a35]">窝窝</span>
+              <AccountDock
+                hidden={visiting}
+                album={album}
+                dirtyKey={JSON.stringify({ family, inventory, battery, decor, mineId, scan })}
+                collect={() => ({
+                  hostName: family.me.name && family.me.name !== "我" ? family.me.name : "我家",
+                  family,
+                  layoutId: mineId,
+                  scan,
+                  furniture: loadAllDecor(),
+                  inventory,
+                  battery,
+                })}
+                apply={(home: HomePayload, photos: Snap[]) => {
+                  writeLocal(home);
+                  setFamily(home.family);
+                  setInventory(home.inventory);
+                  if (home.battery) setBattery(home.battery);
+                  setScan(home.scan);
+                  setMineId(home.layoutId);
+                  setDecor(decorFromSpots(home.furniture, home.scan ? safeLayout(home.scan) : null));
+                  if (photos.length) setAlbum(saveAlbum(photos));
+                  if (home.layoutId || home.scan) setView("mine");
+                }}
+              />
               {visiting ? (
                 <div className="rounded-full bg-white/70 px-3 py-1.5 text-sm shadow-sm backdrop-blur">
                   <span className="text-[#6b4a35]">
