@@ -8,6 +8,15 @@ import type { HomePayload } from "@/lib/snapshot";
 
 type Status = "idle" | "pulling" | "pushing" | "ok" | "error";
 
+// Neon Auth 归一化后的错误码
+const AUTH_ERRORS: Record<string, string> = {
+  invalid_credentials: "邮箱或密码不对",
+  user_not_found: "邮箱或密码不对",
+  email_address_invalid: "邮箱格式不太对",
+  weak_password: "密码至少 8 位",
+  user_already_exists: "这个邮箱已经有账号了，直接登录吧",
+};
+
 async function readJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
@@ -50,8 +59,6 @@ export function AccountDock({
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [usePassword, setUsePassword] = useState(false);
-  const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -112,47 +119,32 @@ export function AccountDock({
 
   if (hidden || embed) return null;
 
-  const sendLink = async () => {
-    if (!email.trim()) return;
-    setBusy(true);
-    setNote(null);
-    const { error } = await authClient.signIn.magicLink({
-      email: email.trim(),
-      name: email.trim().split("@")[0],
-      callbackURL: window.location.href.split("#")[0],
-    });
-    setBusy(false);
-    if (error) {
-      setUsePassword(true);
-      setNote(error.message || "链接发不出去，用密码也可以");
-      return;
-    }
-    setSent(true);
-    setNote("去邮箱点那封信，回来窝就在云上了");
-  };
-
   const withPassword = async (mode: "in" | "up") => {
     if (!email.trim() || !password) return;
     setBusy(true);
     setNote(null);
-    const { error } =
-      mode === "up"
-        ? await authClient.signUp.email({ email: email.trim(), password, name: email.trim().split("@")[0] })
-        : await authClient.signIn.email({ email: email.trim(), password });
+    let code: string | undefined;
+    let failed = false;
+    // Neon 的客户端有时返回 error，有时直接抛（比如密码错），两种都要接住
+    try {
+      const { error } =
+        mode === "up"
+          ? await authClient.signUp.email({ email: email.trim(), password, name: email.trim().split("@")[0] })
+          : await authClient.signIn.email({ email: email.trim(), password });
+      if (error) {
+        failed = true;
+        code = error.code;
+      }
+    } catch (e) {
+      failed = true;
+      code = (e as { code?: string }).code;
+    }
     setBusy(false);
-    if (error) {
-      setNote(error.message || (mode === "up" ? "开账号没成功" : "登录没成功"));
+    if (failed) {
+      setNote(AUTH_ERRORS[code ?? ""] ?? (mode === "up" ? "开账号没成功，待会再试" : "登录没成功，待会再试"));
       return;
     }
     setOpen(false);
-  };
-
-  const google = async () => {
-    setBusy(true);
-    await authClient.signIn.social({
-      provider: "google",
-      callbackURL: window.location.href.split("#")[0],
-    });
   };
 
   const signOut = async () => {
@@ -195,74 +187,55 @@ export function AccountDock({
             <>
               <p className="text-sm font-semibold text-[#6b4a35]">把窝存到云上</p>
               <p className="mt-1 text-xs leading-relaxed text-[#8b6b55]">不登录也能玩。登了之后，人和猫、家具、户型会跟着账号走。</p>
-              <label className="mt-3 block text-xs text-[#8b6b55]" htmlFor="wowo-email">
-                邮箱
-              </label>
-              <input
-                id="wowo-email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@mail.com"
-                className="mt-1 w-full rounded-xl border border-[#ead9c4] bg-white px-3 py-2 text-base text-[#6b4a35] outline-none focus:border-[#ff8a5b]"
-              />
-              {usePassword && (
-                <>
-                  <label className="mt-2 block text-xs text-[#8b6b55]" htmlFor="wowo-pass">
-                    密码
-                  </label>
-                  <input
-                    id="wowo-pass"
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-[#ead9c4] bg-white px-3 py-2 text-base text-[#6b4a35] outline-none focus:border-[#ff8a5b]"
-                  />
-                </>
-              )}
-              {note && <p className="mt-2 text-xs text-[#ff8a5b]">{note}</p>}
-              {sent && !usePassword ? (
-                <p className="mt-3 text-xs text-[#6b4a35]">信已发出。没收到的话看看垃圾箱。</p>
-              ) : usePassword ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void withPassword("in");
+                }}
+              >
+                <label className="mt-3 block text-xs text-[#8b6b55]" htmlFor="wowo-email">
+                  邮箱
+                </label>
+                <input
+                  id="wowo-email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@mail.com"
+                  className="mt-1 w-full rounded-xl border border-[#ead9c4] bg-white px-3 py-2 text-base text-[#6b4a35] outline-none focus:border-[#ff8a5b]"
+                />
+                <label className="mt-2 block text-xs text-[#8b6b55]" htmlFor="wowo-pass">
+                  密码
+                </label>
+                <input
+                  id="wowo-pass"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="至少 8 位"
+                  className="mt-1 w-full rounded-xl border border-[#ead9c4] bg-white px-3 py-2 text-base text-[#6b4a35] outline-none focus:border-[#ff8a5b]"
+                />
+                {note && <p className="mt-2 text-xs text-[#ff8a5b]">{note}</p>}
                 <div className="mt-3 flex gap-2">
                   <button
-                    disabled={busy}
-                    onClick={() => withPassword("in")}
+                    type="submit"
+                    disabled={busy || !email.trim() || !password}
                     className="flex-1 rounded-full bg-[#6b4a35] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
                   >
                     {busy ? "…" : "登录"}
                   </button>
                   <button
-                    disabled={busy}
+                    type="button"
+                    disabled={busy || !email.trim() || !password}
                     onClick={() => withPassword("up")}
                     className="flex-1 rounded-full bg-[#f6ecdf] px-3 py-2 text-sm font-semibold text-[#8b6b55] disabled:opacity-50"
                   >
                     开个账号
                   </button>
                 </div>
-              ) : (
-                <button
-                  disabled={busy || !email.trim()}
-                  onClick={sendLink}
-                  className="mt-3 w-full rounded-full bg-[#6b4a35] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                >
-                  {busy ? "发送中…" : "发登录链接到邮箱"}
-                </button>
-              )}
-              <button
-                disabled={busy}
-                onClick={google}
-                className="mt-2 w-full rounded-full bg-white px-3 py-2 text-sm font-semibold text-[#6b4a35] shadow-sm"
-              >
-                用 Google 登录
-              </button>
-              {!usePassword && (
-                <button onClick={() => setUsePassword(true)} className="mt-2 w-full text-xs text-[#a2866f] hover:text-[#6b4a35]">
-                  用密码登录
-                </button>
-              )}
+              </form>
             </>
           )}
         </div>
