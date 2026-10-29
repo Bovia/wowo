@@ -14,6 +14,29 @@ export const KINDS: { id: ClothesKind; name: string }[] = [
   { id: "other", name: "配饰" },
 ];
 
+export const SEASONS: { id: Season; name: string }[] = [
+  { id: "spring-autumn", name: "春秋" },
+  { id: "summer", name: "夏" },
+  { id: "winter", name: "冬" },
+  { id: "all", name: "四季" },
+];
+
+// 手动改颜色时给的一排色块；点一下名字和图标颜色一起换
+export const SWATCHES: { name: string; hex: string }[] = [
+  { name: "黑色", hex: "#2b2b2b" },
+  { name: "白色", hex: "#f5f3ee" },
+  { name: "灰色", hex: "#9a9a9a" },
+  { name: "藏青", hex: "#2c3e66" },
+  { name: "蓝色", hex: "#3b6aa0" },
+  { name: "卡其色", hex: "#c3b091" },
+  { name: "米色", hex: "#e8dcc4" },
+  { name: "棕色", hex: "#7a5230" },
+  { name: "红色", hex: "#c84e4e" },
+  { name: "粉色", hex: "#e8a0a8" },
+  { name: "绿色", hex: "#5f8a5a" },
+  { name: "黄色", hex: "#e2b25c" },
+];
+
 const MAX_WORN = 120;
 
 export const isClothes = (it: InvItem) => it.category === "clothes";

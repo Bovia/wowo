@@ -1010,6 +1010,11 @@ export default function Wowo() {
             <Wardrobe
               clothes={clothes}
               onUpdate={updateClothes}
+              onAdd={(item) => {
+                const room = selectedRoom?.kind === "bedroom" ? selectedRoom.id : (layout.rooms.find((r) => r.kind === "bedroom") ?? layout.rooms[0]).id;
+                setRooms({ [room]: [...itemsFor(inventory, layout, room), item] });
+              }}
+              onRemove={({ room, item }) => setRooms({ [room]: itemsFor(inventory, layout, room).filter((it) => it.id !== item.id) })}
               onPhoto={() => {
                 setWardrobeOpen(false);
                 pickSight("photo");
