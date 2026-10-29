@@ -186,34 +186,135 @@ const shade = (c: number, k: number) => {
   return (Math.min(255, r) << 16) | (Math.min(255, g) << 8) | Math.min(255, b);
 };
 
-// 一层层收进去的方块坡屋顶，沿长边起脊，带个烟囱。y 从 0 起，摆的时候整体抬到墙顶
-export function roofBoxes(cx: number, cz: number, w: number, d: number, color: number): Box[] {
-  const out: Box[] = [];
-  const over = 0.18;
+const WALLS = [0xf4ecdc, 0xf7f4ee, 0xece6da, 0xf3e1d8, 0xe8ece4];
+const GLASS = 0x9cc3d6;
+const SILL = 0xffffff;
+
+// 一面墙上开一排窗：axis 是墙沿着走的方向，face 是墙面所在的坐标，out 是朝外的方向（±1）
+function windowsOn(out: Box[], axis: "x" | "z", from: number, to: number, face: number, dir: 1 | -1, y0: number, y1: number, skip?: [number, number]) {
+  const n = Math.max(1, Math.floor((to - from) / 0.75));
+  for (let i = 0; i < n; i++) {
+    const c = from + ((to - from) * (i + 0.5)) / n;
+    if (skip && c > skip[0] && c < skip[1]) continue;
+    const half = 0.17;
+    const t0 = dir > 0 ? face : face - 0.03;
+    const t1 = dir > 0 ? face + 0.03 : face;
+    const s0 = dir > 0 ? face : face - 0.06;
+    const s1 = dir > 0 ? face + 0.06 : face;
+    if (axis === "x") {
+      out.push(box(c - half, y0, t0, c + half, y1, t1, GLASS));
+      out.push(box(c - half - 0.03, y0 - 0.05, s0, c + half + 0.03, y0, s1, SILL));
+    } else {
+      out.push(box(t0, y0, c - half, t1, y1, c + half, GLASS));
+      out.push(box(s0, y0 - 0.05, c - half - 0.03, s1, y0, c + half + 0.03, SILL));
+    }
+  }
+}
+
+// 方块拼的陡坡屋顶：沿长边起脊，一层层收；每层薄一点，看起来是斜的而不是一摞板子
+function gable(out: Box[], cx: number, cz: number, w: number, d: number, y: number, color: number) {
+  const over = 0.12;
   const alongX = w >= d;
   const span = (alongX ? d : w) / 2 + over;
   const len = (alongX ? w : d) / 2 + over;
-  const layers = 5;
+  const layers = 8;
   const step = span / layers;
-  const h = 0.16;
+  const h = step * 0.9; // 约 42° 的坡
   for (let k = 0; k < layers; k++) {
     const half = span - k * step;
-    const c = k % 2 ? shade(color, 0.86) : color;
+    const c = k % 2 ? shade(color, 0.9) : color;
     out.push(
       alongX
-        ? box(cx - len, k * h, cz - half, cx + len, (k + 1) * h, cz + half, c)
-        : box(cx - half, k * h, cz - len, cx + half, (k + 1) * h, cz + len, c),
+        ? box(cx - len, y + k * h, cz - half, cx + len, y + (k + 1) * h, cz + half, c)
+        : box(cx - half, y + k * h, cz - len, cx + half, y + (k + 1) * h, cz + len, c),
     );
   }
+  const top = y + layers * h;
   out.push(
     alongX
-      ? box(cx - len, layers * h, cz - 0.08, cx + len, layers * h + 0.08, cz + 0.08, shade(color, 0.7))
-      : box(cx - 0.08, layers * h, cz - len, cx + 0.08, layers * h + 0.08, cz + len, shade(color, 0.7)),
+      ? box(cx - len, top, cz - 0.05, cx + len, top + 0.06, cz + 0.05, shade(color, 0.7))
+      : box(cx - 0.05, top, cz - len, cx + 0.05, top + 0.06, cz + len, shade(color, 0.7)),
   );
-  const chx = cx + (alongX ? len * 0.5 : span * 0.35);
-  const chz = cz + (alongX ? span * 0.35 : len * 0.5);
-  out.push(box(chx - 0.12, 0, chz - 0.12, chx + 0.12, layers * h + 0.35, chz + 0.12, 0x8a5a44));
-  out.push(box(chx - 0.15, layers * h + 0.35, chz - 0.15, chx + 0.15, layers * h + 0.42, chz + 0.15, 0x6b4636));
+  // 烟囱
+  const chx = cx + (alongX ? len * 0.45 : span * 0.4);
+  const chz = cz + (alongX ? -span * 0.4 : len * 0.45);
+  out.push(box(chx - 0.1, y, chz - 0.1, chx + 0.1, top + 0.25, chz + 0.1, 0x8a5a44));
+  out.push(box(chx - 0.13, top + 0.25, chz - 0.13, chx + 0.13, top + 0.3, chz + 0.13, 0x6b4636));
+}
+
+// 小别墅外壳：一层四面墙（比屋里的墙高，把屋里罩住）、门和小雨棚、窗；
+// 二楼是靠后、偏一边的小一圈，盖陡坡顶；一楼剩下的顶是露台，前沿一排白栏杆。
+// 拉近时整个外壳掀开，露出屋里真实的户型。
+export function villaBoxes(cx: number, cz: number, w: number, d: number, side: -1 | 1, index: number): Box[] {
+  const out: Box[] = [];
+  const wall = WALLS[index % WALLS.length];
+  const roof = roofColor(index);
+  const g0 = 0.05;
+  const h1 = 1.05; // 一楼顶
+  const [x0, x1, z0, z1] = [cx - w / 2, cx + w / 2, cz - d / 2, cz + d / 2];
+  const t = 0.06; // 墙厚
+  const front = side < 0 ? z1 : z0; // 朝街那面
+  const fdir: 1 | -1 = side < 0 ? 1 : -1;
+  // 一楼四面墙 + 墙脚
+  out.push(box(x0, g0, z0, x1, h1, z0 + t, wall), box(x0, g0, z1 - t, x1, h1, z1, wall));
+  out.push(box(x0, g0, z0, x0 + t, h1, z1, wall), box(x1 - t, g0, z0, x1, h1, z1, wall));
+  out.push(box(x0 - 0.02, g0, z0 - 0.02, x1 + 0.02, g0 + 0.12, z1 + 0.02, shade(wall, 0.78)));
+  // 一楼顶：盖住屋里，四周挑出一点当檐口；上面铺一层木地板，是露台
+  out.push(box(x0 - 0.06, h1, z0 - 0.06, x1 + 0.06, h1 + 0.06, z1 + 0.06, shade(wall, 0.88)));
+  out.push(box(x0 + 0.04, h1 + 0.06, z0 + 0.04, x1 - 0.04, h1 + 0.08, z1 - 0.04, 0xcfae84));
+  // 门、雨棚、台阶（朝街，居中）
+  const door = 0.2;
+  out.push(
+    fdir > 0
+      ? box(cx - door, g0, front, cx + door, g0 + 0.62, front + 0.03, 0x8a5a3c)
+      : box(cx - door, g0, front - 0.03, cx + door, g0 + 0.62, front, 0x8a5a3c),
+  );
+  out.push(
+    fdir > 0
+      ? box(cx - door - 0.12, g0 + 0.7, front, cx + door + 0.12, g0 + 0.76, front + 0.28, roof)
+      : box(cx - door - 0.12, g0 + 0.7, front - 0.28, cx + door + 0.12, g0 + 0.76, front, roof),
+  );
+  for (let k = 0; k < 2; k++) {
+    const depth = 0.18 * (2 - k);
+    out.push(
+      fdir > 0
+        ? box(cx - door - 0.06, 0, front, cx + door + 0.06, g0 + 0.04 * (k + 1), front + depth, 0xe0d6c4)
+        : box(cx - door - 0.06, 0, front - depth, cx + door + 0.06, g0 + 0.04 * (k + 1), front, 0xe0d6c4),
+    );
+  }
+  // 一楼窗：前面（门两边空出来）、后面、两侧
+  windowsOn(out, "x", x0 + 0.2, x1 - 0.2, front, fdir, g0 + 0.42, g0 + 0.78, [cx - door - 0.25, cx + door + 0.25]);
+  windowsOn(out, "x", x0 + 0.2, x1 - 0.2, side < 0 ? z0 : z1, fdir > 0 ? -1 : 1, g0 + 0.42, g0 + 0.78);
+  windowsOn(out, "z", z0 + 0.2, z1 - 0.2, x0, -1, g0 + 0.42, g0 + 0.78);
+  windowsOn(out, "z", z0 + 0.2, z1 - 0.2, x1, 1, g0 + 0.42, g0 + 0.78);
+
+  // 二楼：靠后、偏一边
+  // 二楼占大半，露台只剩前面和一侧一条
+  const w2 = Math.max(1.8, w * 0.74);
+  const d2 = Math.max(1.5, d * 0.7);
+  const left = index % 2 === 0;
+  const ux0 = left ? x0 + 0.15 : x1 - 0.15 - w2;
+  const ux1 = ux0 + w2;
+  const back = side < 0 ? z0 : z1;
+  const uz0 = side < 0 ? back + 0.15 : back - 0.15 - d2;
+  const uz1 = uz0 + d2;
+  const y2 = h1 + 0.08;
+  const h2 = y2 + 0.82;
+  out.push(box(ux0, y2, uz0, ux1, h2, uz1, shade(wall, 1.02)));
+  const ufront = side < 0 ? uz1 : uz0;
+  windowsOn(out, "x", ux0 + 0.15, ux1 - 0.15, ufront, fdir, y2 + 0.3, y2 + 0.64);
+  windowsOn(out, "z", uz0 + 0.15, uz1 - 0.15, left ? ux1 : ux0, left ? 1 : -1, y2 + 0.3, y2 + 0.64);
+  gable(out, (ux0 + ux1) / 2, (uz0 + uz1) / 2, w2, d2, h2, roof);
+
+  // 露台栏杆：一楼顶朝街那条边
+  const ry = h1 + 0.08;
+  const rz = front - fdir * 0.08;
+  out.push(box(x0 + 0.05, ry + 0.22, rz - 0.025, x1 - 0.05, ry + 0.27, rz + 0.025, 0xffffff));
+  const posts = Math.max(2, Math.round((x1 - x0) / 0.32));
+  for (let i = 0; i <= posts; i++) {
+    const px = x0 + 0.05 + ((x1 - x0 - 0.1) * i) / posts;
+    out.push(box(px - 0.02, ry, rz - 0.02, px + 0.02, ry + 0.27, rz + 0.02, 0xffffff));
+  }
   return out;
 }
 

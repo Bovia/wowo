@@ -8,10 +8,10 @@ import { Color, Object3D, Vector3, type Group, type InstancedMesh, type Perspect
 import { skyAt, nowHour, sunPosition } from "@/lib/daylight";
 import { applySpots } from "@/lib/decor";
 import type { Person } from "@/lib/family";
-import { buildHome, H_OUT, type Box, type Layout } from "@/lib/home";
+import { buildHome, type Box, type Layout } from "@/lib/home";
 import { DEMOS, TEMPLATES } from "@/lib/layouts";
 import { scanToLayout } from "@/lib/scan";
-import { houseZ, LOT_MAX, TOWER_MAX, NPCS, plotAt, roofBoxes, roofColor, scenery, STREET, townSize, WALK, yardBoxes, type Plot, type TownHome } from "@/lib/town";
+import { houseZ, LOT_MAX, villaBoxes, TOWER_MAX, NPCS, plotAt, scenery, STREET, townSize, WALK, yardBoxes, type Plot, type TownHome } from "@/lib/town";
 import { visitLink, type HomeRef } from "@/lib/visit";
 import { catParts, Parts, personParts } from "./creatures";
 
@@ -25,7 +25,8 @@ function layoutOf(home: HomeRef): Layout | null {
   }
 }
 
-type Lot = { home: TownHome; plot: Plot; boxes: Box[]; roof: Box[]; eave: number; center: [number, number] };
+// roof 现在是整个小别墅外壳（墙、门窗、二楼、屋顶、露台），拉近时一起掀开
+type Lot = { home: TownHome; plot: Plot; boxes: Box[]; roof: Box[]; center: [number, number] };
 
 // 把一户的窝缩小、摆到它那块地上：房子靠里，前面是院子，头上一个能掀开的屋顶
 function lotOf(home: TownHome, plot: Plot, index: number): Lot | null {
@@ -51,7 +52,7 @@ function lotOf(home: TownHome, plot: Plot, index: number): Lot | null {
       y1: 0.05 + b.y1 * s,
     });
   }
-  return { home, plot, boxes, roof: roofBoxes(plot.x, cz, w, d, roofColor(index)), eave: 0.05 + H_OUT * s, center: [plot.x, cz] };
+  return { home, plot, boxes, roof: villaBoxes(plot.x, cz, w, d, plot.side, index), center: [plot.x, cz] };
 }
 
 const dummy = new Object3D();
@@ -148,13 +149,13 @@ function Roof({ lot, index, hovered, onHover, onPick }: { lot: Lot; index: numbe
     const g = group.current;
     const m = mesh.current;
     if (!g || !m) return;
-    // 稍微拉近一点（全镇视角的七成）：所有屋顶掀开，能看见各家屋里
+    // 拉得很近（全镇视角的不到一半）：小别墅外壳掀开，能看见各家屋里；中等远近先看房子本身
     const target = (controls as unknown as { target?: Vector3 } | null)?.target ?? roofPos.set(0, 0, 0);
-    const near = camera.position.distanceTo(target) < view.fit * 0.72;
+    const near = camera.position.distanceTo(target) < view.fit * 0.45;
     const goal = near ? 1 : hovered ? 0.6 : 0;
     lift.current += (goal - lift.current) * Math.min(1, dt * 5);
     const k = lift.current;
-    g.position.y = lot.eave + k * 1.6;
+    g.position.y = k * 2.2;
     const mat = m.material as { opacity: number; transparent: boolean; depthWrite: boolean };
     mat.opacity = 1 - k * 0.9;
     mat.transparent = k > 0.01;
@@ -162,7 +163,7 @@ function Roof({ lot, index, hovered, onHover, onPick }: { lot: Lot; index: numbe
     g.visible = k < 0.98;
   });
   return (
-    <group ref={group} position={[0, lot.eave, 0]}>
+    <group ref={group}>
       <instancedMesh
         ref={mesh}
         args={[undefined, undefined, lot.roof.length]}
@@ -242,7 +243,8 @@ function Signs({ lots, els }: { lots: Lot[]; els: React.RefObject<(HTMLButtonEle
   return null;
 }
 
-function Rig({ halfW, halfD, back }: { halfW: number; halfD: number; back: number }) {
+// focus：/town?at=门牌号 时一进来就对准那户，远近停在能看清小别墅、外壳还没掀开的地方
+function Rig({ halfW, halfD, back, focus }: { halfW: number; halfD: number; back: number; focus: [number, number] | null }) {
   const size = useThree((s) => s.size);
   const get = useThree((s) => s.get);
   useLayoutEffect(() => {
@@ -269,10 +271,16 @@ function Rig({ halfW, halfD, back }: { halfW: number; halfD: number; back: numbe
       }));
       dist *= reach;
     }
-    camera.position.copy(dir).multiplyScalar(dist);
-    camera.lookAt(0, 0, 0);
     view.fit = dist;
-  }, [get, size.width, size.height, halfW, halfD, back]);
+    const at = new Vector3(focus?.[0] ?? 0, 0, focus?.[1] ?? 0);
+    camera.position.copy(dir).multiplyScalar(focus ? dist * 0.5 : dist).add(at);
+    camera.lookAt(at);
+    const orbit = get().controls as unknown as { target?: Vector3; update?: () => void } | null;
+    if (orbit?.target) {
+      orbit.target.copy(at);
+      orbit.update?.();
+    }
+  }, [get, size.width, size.height, halfW, halfD, back, focus]);
   // 拖着挪不许把镇子挪丢
   useFrame(({ controls }) => {
     const t = (controls as unknown as { target?: { x: number; z: number; y: number } } | null)?.target;
@@ -316,6 +324,9 @@ export default function Town() {
     return { boxes: all, owner: own };
   }, [lots, sky.lamps]);
   const { halfW, halfD, back } = townSize(lots.length);
+  const [atHandle] = useState(() => new URLSearchParams(location.search).get("at")?.replace(/^@/, "").toLowerCase() ?? null);
+  const focusLot = atHandle ? lots.find((l) => l.home.handle === atHandle) : undefined;
+  const focus = useMemo<[number, number] | null>(() => (focusLot ? [focusLot.center[0], focusLot.center[1]] : null), [focusLot]);
 
   useEffect(() => {
     document.body.style.cursor = hovered !== null ? "pointer" : "";
@@ -380,7 +391,7 @@ export default function Town() {
           // 竖屏要退得很远才装得下整条街，别让这里把机位拽回来
           maxDistance={Math.max(halfW, halfD) * 12 + 20}
         />
-        <Rig halfW={halfW} halfD={halfD} back={back} />
+        <Rig halfW={halfW} halfD={halfD} back={back} focus={focus} />
         <Signs lots={lots} els={signs} />
       </Canvas>
 
