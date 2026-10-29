@@ -9,7 +9,7 @@ export const receiptSchema = z.object({
       name: z.string().describe("日常叫法，越短越好，比如「鸡蛋」「洗衣液」「卫衣」，不要整段商品标题"),
       spec: z.string().nullable().describe("规格，比如「30枚」「2kg」「黑色 L」；没有就 null"),
       count: z.number().int().describe("买了几件（下单数量），看不出就 1"),
-      price: z.number().nullable().describe("这一行实付的总价，单位元；看不出就 null"),
+      price: z.number().nullable().describe("每件的单价，单位元；看不出就 null"),
       category: z.enum(["food", "daily", "clothes", "appliance", "other"]).describe("吃的喝的 food；纸巾洗衣液这类消耗品 daily；衣服鞋包 clothes；电器数码 appliance"),
       roomKind: z
         .enum(["kitchen", "bathroom", "bedroom", "living", "storage"])
