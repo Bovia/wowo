@@ -52,6 +52,7 @@ export type Box = {
   color: number;
   room: string | null;
   piece?: number;
+  glass?: boolean;
 };
 
 export type Cell = [number, number];
@@ -112,6 +113,7 @@ class Builder {
       z1,
       color: shade(color, x0 + x1, y0 + y1, z0 + z1, jitter),
       room: this.room,
+      ...((color === "#bfe0ee" || color === "#b8ceca") && { glass: true }),
       ...(this.piece === undefined ? {} : { piece: this.piece }),
     });
   }

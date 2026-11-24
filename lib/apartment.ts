@@ -40,7 +40,7 @@ function balconySlider(): Piece {
 }
 
 // A low step-over curb separates the shower floor from the dry area.
-const wetWidth = W - SPLIT - .22;
+const wetWidth = BATH - SECOND - .22;
 const wetZone = fitting(wetWidth, .77, [
   [0, 0, 0, wetWidth, .025, .77, "#b5c3bf"],
   [0, .025, .70, wetWidth, .12, .77, "#8e928a"],
@@ -139,7 +139,7 @@ const source = {
       wall(0,BAL,W,BAL,"second",false,[{a:.55,b:W-.55,kind:"door",top:2.1}]),
       wall(W,BAL,W,SECOND,"second",true),
       wall(0,SECOND,W,SECOND,"second",false,[{a:.15,b:1.2,kind:"door"}]),
-      wall(SPLIT,SECOND,SPLIT,BATH,"bathroom",false,[{a:SECOND+.4,b:SECOND+1.3,kind:"door"}]),
+      wall(SPLIT,SECOND,SPLIT,BATH,"bathroom",false,[{a:SECOND+.72,b:SECOND+1.62,kind:"door"}]),
       wall(SPLIT,BATH,W,BATH,"bathroom",false),
       wall(W,SECOND,W,BATH,"bathroom",true,[{a:SECOND+.45,b:SECOND+1.2,kind:"window",sill:1.35,top:2.1}]),
       wall(W,BATH,W,u(7200),"living",true),
@@ -163,10 +163,10 @@ const source = {
       put(tatami(1.7,2.5),"second",W-2.64,BAL+.83,"e"),
       put(bedside,"second",W-.6,BAL+.21),
       put(wardrobe(2.05),"second",W-2.2,SECOND-.76,"s"),
-      put(wetZone,"bathroom",SPLIT+.11,SECOND+.11),
-      put(woodSlider,"bathroom",SPLIT-.18,SECOND+1.29,"w"),
-      put(openToilet,"bathroom",SPLIT+.42,BATH-.92),
-      put(vanity,"bathroom",W-.95,BATH-.65,"s"),
+      put(wetZone,"bathroom",W-.88,SECOND+.11,"e"),
+      put(woodSlider,"bathroom",SPLIT+.11,SECOND+.02,"w"),
+      put(openToilet,"bathroom",SPLIT+.27,SECOND+.17,"e"),
+      put(vanity,"bathroom",SPLIT+.44,BATH-.65,"s"),
       put(sofa(1.75),"living",.15,BATH+.5,"w"),
       put(tvStand(1.15),"living",W-1.45,BATH+.14),
       put(catHouse(),"living",W-u(1500)-.13,KITCHEN-u(600)-.13,"s"),

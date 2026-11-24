@@ -74,9 +74,11 @@ function Boxes({
   onGrab,
   build,
   clock,
+  glass = false,
   name,
 }: {
   name?: string;
+  glass?: boolean;
   boxes: Box[];
   build?: Build;
   clock?: RefObject<number>;
@@ -154,8 +156,8 @@ function Boxes({
       ref={ref}
       name={name}
       args={[undefined, undefined, boxes.length]}
-      castShadow
-      receiveShadow
+      castShadow={!glass}
+      receiveShadow={!glass}
       onPointerDown={
         onGrab
           ? (e) => {
@@ -190,7 +192,7 @@ function Boxes({
       }
     >
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial roughness={0.85} metalness={0} />
+      <meshStandardMaterial roughness={glass ? 0.13 : 0.85} metalness={0} transparent={glass} opacity={glass ? 0.22 : 1} depthWrite={!glass} />
     </instancedMesh>
   );
 }
@@ -570,6 +572,20 @@ export function HouseScene({
   const build = useMemo(() => buildSchedule(home.boxes), [home.boxes]);
   const clock = useRef(0);
   const [builtKey, setBuiltKey] = useState<string | null>(null);
+  const layers = useMemo(() => {
+    if (layout.id !== "xiaoning-apartment") return [{ boxes: home.boxes, build, glass: false }];
+    return [false, true].map(glass => {
+      const boxes: Box[] = [];
+      const delays: number[] = [];
+      home.boxes.forEach((box, index) => {
+        if (Boolean(box.glass) === glass) {
+          boxes.push(box);
+          delays.push(build.delays[index]);
+        }
+      });
+      return { boxes, glass, build: { delays: Float32Array.from(delays), total: build.total } };
+    });
+  }, [layout.id, home.boxes, build]);
   const buildKey = `${introRun}:${layout.id}`;
   const extent = Math.max(home.width, home.depth);
   const { size } = useThree();
@@ -645,11 +661,12 @@ export function HouseScene({
             <meshStandardMaterial color="#c99d76" roughness={0.95} />
           </RoundedBox>
 
-          <Boxes
-            key={layout.id}
-            name={HOUSE}
-            boxes={home.boxes}
-            build={build}
+          {layers.map(layer => <Boxes
+            key={layout.id + String(layer.glass)}
+            name={layer.glass ? undefined : HOUSE}
+            glass={layer.glass}
+            boxes={layer.boxes}
+            build={layer.build}
             clock={clock}
             highlight={decorating ? null : label}
             picked={decorating ? picked : null}
@@ -668,7 +685,7 @@ export function HouseScene({
                   }
                 : undefined
             }
-          />
+          />)}
 
           {dragging !== null && (
             <Dragging
