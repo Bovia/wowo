@@ -28,7 +28,7 @@ export type WallSpec = {
   openings?: Opening[];
 };
 
-export type FloorSpec = { room: string; x0: number; z0: number; x1: number; z1: number; elev?: number };
+export type FloorSpec = { room: string; x0: number; z0: number; x1: number; z1: number; elev?: number; slabColor?: string };
 
 export type Placement = { piece: Piece; room: string; x: number; z: number; side: Side; y?: number };
 
@@ -124,6 +124,11 @@ const pick = (colors: string[], r: number) => colors[Math.floor(r * colors.lengt
 function floorTiles(b: Builder, f: FloorSpec, kind: RoomKind) {
   const { x0: fx0, z0: fz0, x1: fx1, z1: fz1 } = f;
   const y0 = f.elev ?? 0;
+  if (f.slabColor) {
+    b.add(fx0, 0, fz0, fx1, y0, fz1, "#f5f3ed", 0);
+    b.add(fx0, y0, fz0, fx1, y0 + FLOOR, fz1, f.slabColor, 0);
+    return;
+  }
   if (y0 > 0) {
     b.add(fx0, 0, fz0, fx1, y0, fz1, "#b8875a", 0.02);
   }
