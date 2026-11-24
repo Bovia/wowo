@@ -9,14 +9,14 @@ import { skyAt, nowHour, sunPosition } from "@/lib/daylight";
 import { applySpots } from "@/lib/decor";
 import type { Person } from "@/lib/family";
 import { buildHome, type Box, type Layout } from "@/lib/home";
-import { DEMOS, TEMPLATES } from "@/lib/layouts";
+import { VISIT_LAYOUTS, TEMPLATES } from "@/lib/layouts";
 import { scanToLayout } from "@/lib/scan";
 import { houseZ, LOT_MAX, villaBoxes, TOWER_MAX, NPCS, plotAt, scenery, STREET, townSize, WALK, yardBoxes, type Plot, type TownHome } from "@/lib/town";
 import { visitLink, type HomeRef } from "@/lib/visit";
 import { catParts, Parts, personParts } from "./creatures";
 
 function layoutOf(home: HomeRef): Layout | null {
-  if ("d" in home) return DEMOS.find((d) => d.id === home.d) ?? null;
+  if ("d" in home) return VISIT_LAYOUTS.find((d) => d.id === home.d) ?? null;
   if ("t" in home) return TEMPLATES.find((t) => t.id === home.t) ?? null;
   try {
     return scanToLayout(home.s);

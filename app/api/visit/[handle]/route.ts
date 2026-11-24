@@ -22,7 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ han
   const scan = (row.scan as Scan | null) ?? null;
   const layoutId = (row.layout_id as string | null) ?? null;
   // 跟前端 resolveHome 的 id 对上：扫描户型是 "scan"，模板用自己的 id，没有就落在样板间
-  const [home, key]: [HomeRef, string] = scan ? [{ s: scan }, "scan"] : layoutId ? [{ t: layoutId }, layoutId] : [{ d: "demo" }, "demo"];
+  const [home, key]: [HomeRef, string] = scan ? [{ s: scan }, "scan"] : layoutId === "demo2" ? [{ d: "demo2" }, "demo2"] : layoutId ? [{ t: layoutId }, layoutId] : [{ d: "demo" }, "demo"];
   const furniture = (row.furniture as Record<string, Spot[]> | null) ?? {};
   const name = family?.me?.name;
   const card: VisitCard = {

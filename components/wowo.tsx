@@ -25,7 +25,7 @@ import { formatHour, nowHour, skyAt } from "@/lib/daylight";
 import { colorFor, itemsFor, loadInventory, newId, roomKey, saveInventory, stampRoom, type InvItem, type Inventory } from "@/lib/inventory";
 import { markGone } from "@/lib/items-sync";
 import { GUEST, hasFamily, loadFamily, saveFamily, type Family } from "@/lib/family";
-import { DEMOS, DEMO_ROOMS, TEMPLATES } from "@/lib/layouts";
+import { VISIT_LAYOUTS, DEMOS, DEMO_ROOMS, TEMPLATES } from "@/lib/layouts";
 import {
   capturePhoto,
   captionFor,
@@ -81,13 +81,13 @@ const CAPTIONS: Record<string, string> = {
 const NO_ALERTS: Record<string, number> = {};
 
 function resolveHome(home: HomeRef): Layout | null {
-  if ("d" in home) return DEMOS.find((d) => d.id === home.d) ?? null;
+  if ("d" in home) return VISIT_LAYOUTS.find((d) => d.id === home.d) ?? null;
   if ("t" in home) return TEMPLATES.find((t) => t.id === home.t) ?? null;
   return safeLayout(home.s);
 }
 
 function decorFromSpots(furniture: Record<string, Spot[]>, extra: Layout | null) {
-  const layouts = [...DEMOS, ...TEMPLATES, ...(extra ? [extra] : [])];
+  const layouts = [...VISIT_LAYOUTS, ...TEMPLATES, ...(extra ? [extra] : [])];
   const out: Record<string, Placement[] | null> = {};
   for (const [id, spots] of Object.entries(furniture ?? {})) {
     const layout = layouts.find((l) => l.id === id);
@@ -157,11 +157,12 @@ export default function Wowo() {
   }, [knocking]);
 
   // 从小镇点进来串门的，离开就回镇上
-  const [fromTown] = useState(() => new URLSearchParams(location.search).get("from") === "town");
+  const [fromDistrict] = useState(() => new URLSearchParams(location.search).get("from"));
+  const fromTown = fromDistrict === "town" || fromDistrict === "apartment";
   const router = useRouter();
   const goHome = () => {
     if (fromTown) {
-      router.push("/town");
+      router.push(fromDistrict === "apartment" ? "/town/apartment" : "/town");
       return;
     }
     leaveVisit();
@@ -631,7 +632,7 @@ export default function Wowo() {
                 collect={() => ({
                   hostName: family.me.name && family.me.name !== "我" ? family.me.name : "我家",
                   family,
-                  layoutId: mineId,
+                  layoutId: mineId ?? "demo2",
                   scan,
                   furniture: loadAllDecor(),
                   battery,
@@ -644,7 +645,8 @@ export default function Wowo() {
                   setMineId(home.layoutId);
                   setDecor(decorFromSpots(home.furniture, home.scan ? safeLayout(home.scan) : null));
                   if (photos.length) setAlbum(saveAlbum(photos));
-                  if (home.layoutId || home.scan) setView("mine");
+                  if (home.layoutId === "demo2" && !home.scan) setView("demo2");
+                  else if (home.layoutId || home.scan) setView("mine");
                 }}
               />
               {visiting ? (

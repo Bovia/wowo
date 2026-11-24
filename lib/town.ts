@@ -6,6 +6,12 @@ import type { HomeRef } from "./visit";
 // 窝窝镇第一版：一条街，中间一个小广场，两边一户一块地。每户就是它真实的窝，缩小了摆上去。
 export type TownHome = { handle: string; host: string; home: HomeRef; decor: Spot[] | null; family: Family; npc?: boolean };
 
+export const XIAONING: TownHome = {
+  handle: "xiaoning", host: "小宁", npc: true,
+  home: { d: "xiaoning-apartment" }, decor: null,
+  family: { me: { name: "小宁", hair: "#3b302b", style: "short", shirt: "#8d9f9b", pants: "#4c5360", skin: "#f1c9a5" }, partner: null, cats: [] },
+};
+
 // 两个样板间当最早的邻居：镇子刚开张也不空
 export const NPCS: TownHome[] = [
   {

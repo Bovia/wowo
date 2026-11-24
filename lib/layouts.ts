@@ -1,3 +1,4 @@
+import { XIAONING_APARTMENT } from "./apartment";
 import {
   boxes,
   catTree,
@@ -63,7 +64,7 @@ const put = (piece: Placement["piece"], room: string, x: number, z: number, side
 
 export const DEMO_LAYOUT_2: Layout = {
   id: "demo2",
-  name: "样板间二",
+  name: "我的家",
   demo: true,
   rooms: [
     { id: "living", name: "客厅", kind: "living", x: XM, z: ZP, w: XR - XM, d: ZM - ZP },
@@ -146,7 +147,9 @@ export const DEMO_LAYOUT_2: Layout = {
   },
 };
 
-export const DEMOS = [DEMO_LAYOUT, DEMO_LAYOUT_2];
+// Keep old snapshots resolvable, but only show the owner’s chosen home.
+export const VISIT_LAYOUTS = [DEMO_LAYOUT, DEMO_LAYOUT_2, XIAONING_APARTMENT];
+export const DEMOS = [DEMO_LAYOUT_2];
 
 export const TEMPLATES: Layout[] = [
   {
