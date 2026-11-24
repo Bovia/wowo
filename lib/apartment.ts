@@ -8,7 +8,7 @@ const W = u(3015), BAL = u(1445), SECOND = u(4920), BATH = u(6637);
 const KITCHEN = u(9620), MASTER = u(11892), END = u(14720), SPLIT = u(1040);
 const wall = (x0:number,z0:number,x1:number,z1:number,room:string,outer:boolean,openings?:Opening[]): WallSpec => ({x0,z0,x1,z1,room,outer,openings});
 const put = (piece:Placement["piece"],room:string,x:number,z:number,side:Placement["side"]="n"):Placement=>({piece,room,x,z,side});
-export const XIAONING_APARTMENT: Layout = {
+const source = {
   id: "xiaoning-apartment",
   name: "小宁的家",
   rooms: [
@@ -70,5 +70,38 @@ export const XIAONING_APARTMENT: Layout = {
       put(tatami(1.9,2.5),"master",W-2.05,MASTER+.3),
       put(wardrobe(1.6),"master",.15,MASTER+1.4,"w"),
     ],
+  },
+} satisfies Layout;
+
+// Include the bay in the reflection span so all floor coordinates stay nonnegative.
+const flipX = (x: number) => W + .55 - x;
+function mirrorFurniture({ piece, side, x, ...rest }: Placement): Placement {
+  const alongSideWall = side === "w" || side === "e";
+  return {
+    ...rest,
+    side: side === "w" ? "e" : side === "e" ? "w" : side,
+    x: flipX(x + (alongSideWall ? piece.d : piece.w)),
+    piece: {
+      ...piece,
+      boxes: piece.boxes.map(([a, y, z, b, top, end, color]) =>
+        [piece.w - b, y, z, piece.w - a, top, end, color]),
+      solids: piece.solids?.map(([a, z, b, end]) => [piece.w - b, z, piece.w - a, end]),
+    },
+  };
+}
+
+export const XIAONING_APARTMENT: Layout = {
+  ...source,
+  rooms: source.rooms.map(room => ({ ...room, x: flipX(room.x + room.w) })),
+  plan: {
+    floors: source.plan.floors.map(f => ({ ...f, x0: flipX(f.x1), x1: flipX(f.x0) })),
+    walls: source.plan.walls.map(w => ({
+      ...w, x0: flipX(w.x1), x1: flipX(w.x0),
+      openings: w.openings?.map(o => {
+        if (w.z0 === w.z1) return { ...o, a: flipX(o.b), b: flipX(o.a) };
+        return o.leaf ? { ...o, leaf: o.leaf === "+" ? "-" : "+" } : o;
+      }),
+    })),
+    furniture: source.plan.furniture.map(mirrorFurniture),
   },
 };
