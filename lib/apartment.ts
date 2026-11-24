@@ -1,4 +1,4 @@
-import { counter, doormat, fridge, plant, shower, sofa, tatami, toilet, tvStand, vanity, wardrobe, shoeCabinet } from "./furniture";
+import { counter, doormat, fridge, plant, sofa, tatami, toilet, tvStand, vanity, wardrobe, shoeCabinet } from "./furniture";
 import type { Piece, LBox } from "./furniture";
 import type { Layout, Opening, Placement, WallSpec } from "./home";
 
@@ -37,6 +37,55 @@ function balconySlider(): Piece {
       boxes.push([offset, y, z, offset + 1.16, y + .045, z + .055, frame]);
   }
   return fitting(1.31, .13, boxes);
+}
+
+// A low step-over curb separates the shower floor from the dry area.
+const wetWidth = W - SPLIT - .22;
+const wetZone = fitting(wetWidth, .77, [
+  [0, 0, 0, wetWidth, .025, .77, "#b5c3bf"],
+  [0, .025, .70, wetWidth, .12, .77, "#8e928a"],
+  [.15, .025, .1, .3, .03, .2, "#737f81"],
+  [.25, .25, .03, .29, 1.95, .08, "#afb8b9"],
+  [.23, 1.9, .04, .31, 1.96, .32, "#a4afb1"],
+  [.13, 1.86, .23, .41, 1.92, .45, "#b4bdbf"],
+  [.16, .89, .04, .39, .96, .12, "#8b9598"],
+]);
+wetZone.solids = [];
+
+// Open white seat and a recessed basin, so the toilet reads clearly from overhead.
+const openToilet: Piece = {
+  ...toilet,
+  boxes: [
+    ...toilet.boxes.slice(0, 4),
+    [.07,.25,.17,.43,.40,.65,"#eeeae2"],
+    [.11,.40,.24,.39,.405,.59,"#c2d5d6"],
+    [.05,.40,.21,.12,.45,.62,"#fffdf8"], [.38,.40,.21,.45,.45,.62,"#fffdf8"],
+    [.09,.40,.17,.41,.45,.25,"#fffdf8"], [.09,.40,.58,.41,.45,.67,"#fffdf8"],
+    [.08,.43,.16,.42,.70,.20,"#f4f2eb"],
+  ],
+};
+
+const woodSlider = fitting(.88, .07, [
+  [0, .04, 0, .88, 1.98, .055, "#ad805a"],
+  ...[.18,.38,.58,.78].map((x): LBox => [x,.06,.055,x+.012,1.96,.06,"#99704e"]),
+  [.71,.85,.055,.76,1.07,.07,"#675d51"],
+  [0,1.99,0,.88,2.04,.07,"#686c68"],
+]);
+
+function catHouse(): Piece {
+  const width = u(1500), height = u(2000), depth = u(600);
+  const wood = "#cbab86";
+  const boxes: LBox[] = [
+    [0,0,0,width,.09,depth,wood], [0,height-.08,0,width,height,depth,wood],
+    [0,0,0,width,height,.06,"#b79a7c"],
+    [0,0,.05,.065,height,depth,wood], [width-.065,0,.05,width,height,depth,wood],
+    [.05,.57,.05,width*.58,.64,depth,wood],
+    [width*.45,1.16,.05,width-.05,1.23,depth,wood],
+    [.05,1.78,.05,width*.55,1.85,depth,wood],
+    [.17,.09,.16,.26,.57,.25,"#b99c71"],
+    [width*.6,.1,.12,width-.16,.18,depth-.1,"#92a69b"],
+  ];
+  return fitting(width, depth, boxes);
 }
 
 const bedside = fitting(.44, .43, [
@@ -93,12 +142,13 @@ const source = {
       wall(SPLIT,SECOND,SPLIT,BATH,"bathroom",false,[{a:SECOND+.4,b:SECOND+1.3,kind:"door"}]),
       wall(SPLIT,BATH,W,BATH,"bathroom",false),
       wall(W,SECOND,W,BATH,"bathroom",true,[{a:SECOND+.45,b:SECOND+1.2,kind:"window",sill:1.35,top:2.1}]),
-      wall(W,BATH,W,KITCHEN,"living",true,[{a:u(7200),b:u(8800),kind:"window",sill:.35,top:2.1}]),
+      wall(W,BATH,W,u(7200),"living",true),
+      wall(W,u(8800),W,KITCHEN,"living",true),
       wall(W,u(7200),W+.55,u(7200),"living",true,[{a:W+.1,b:W+.5,kind:"window",sill:.35,top:2.1}]),
       wall(W+.55,u(7200),W+.55,u(8800),"living",true,[{a:u(7200)+.1,b:u(8800)-.1,kind:"window",sill:.35,top:2.1}]),
       wall(W,u(8800),W+.55,u(8800),"living",true,[{a:W+.1,b:W+.5,kind:"window",sill:.35,top:2.1}]),
       wall(SPLIT,KITCHEN,W,KITCHEN,"kitchen",false),
-      wall(SPLIT,KITCHEN,SPLIT,MASTER,"kitchen",false,[{a:MASTER-1.35,b:MASTER-.3,kind:"door"}]),
+      wall(SPLIT,KITCHEN,SPLIT,MASTER,"kitchen",false,[{a:KITCHEN+.38,b:MASTER-.25,kind:"door"}]),
       wall(W,KITCHEN,W,MASTER,"kitchen",true,[{a:KITCHEN+.85,b:KITCHEN+1.6,kind:"window",sill:1.15,top:2.1}]),
       wall(0,MASTER,W,MASTER,"master",false,[{a:.15,b:1.2,kind:"door"}]),
       wall(W,MASTER,W,END,"master",true),
@@ -113,17 +163,19 @@ const source = {
       put(tatami(1.7,2.5),"second",W-2.64,BAL+.83,"e"),
       put(bedside,"second",W-.6,BAL+.21),
       put(wardrobe(2.05),"second",W-2.2,SECOND-.76,"s"),
-      put(shower(.85,.95),"bathroom",W-.98,SECOND+.15),
-      put(toilet,"bathroom",SPLIT+.42,BATH-.92),
+      put(wetZone,"bathroom",SPLIT+.11,SECOND+.11),
+      put(woodSlider,"bathroom",SPLIT-.18,SECOND+1.29,"w"),
+      put(openToilet,"bathroom",SPLIT+.42,BATH-.92),
       put(vanity,"bathroom",W-.95,BATH-.65,"s"),
       put(sofa(1.75),"living",.15,BATH+.5,"w"),
-      put(tvStand(1.15),"living",W-.5,BATH+.8,"e"),
-      put(plant,"living",W-.6,KITCHEN-.6),
+      put(tvStand(1.15),"living",W-1.45,BATH+.14),
+      put(catHouse(),"living",W-u(1500)-.13,KITCHEN-u(600)-.13,"s"),
+      put(balconySlider(),"kitchen",SPLIT+.1,KITCHEN+.12,"w"),
       put(shoeCabinet(.85),"entry",.1,KITCHEN+.15,"w"),
       put(doormat,"entry",.15,u(10650),"w"),
       put(counter(1.65,{sink:true,stove:false}),"kitchen",W-.72,KITCHEN+.15,"e"),
       put(hob,"kitchen",W-2.23,MASTER-.74,"s"),
-      put(fridge,"kitchen",SPLIT+.18,KITCHEN+.2),
+      put(fridge,"kitchen",SPLIT+.36,KITCHEN+.2),
       put(tatami(1.9,2.5),"master",W-2.65,END-2.05,"e"),
       put(wardrobe(1.2),"master",W-.72,MASTER+.14,"e"),
       put(desk,"master",.13,END-1.22,"w"),
