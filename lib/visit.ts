@@ -7,6 +7,9 @@ export type HomeRef = { d: string } | { t: string } | { s: Scan };
 // Everything a friend needs to look around; inventory stays private.
 export type VisitCard = { v: 1; host: string; home: HomeRef; decor: Spot[] | null; family: Family };
 
+const XIAONING_HASH = "#neighbor=xiaoning";
+export const XIAONING_VISIT_URL = "/?from=apartment" + XIAONING_HASH;
+
 const PREFIX = "#visit=";
 
 async function pipe(bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | DecompressionStream) {
@@ -39,7 +42,7 @@ export function visitHandle(): string | null {
 
 export const liveLink = (handle: string) => `${location.origin}/@${handle}`;
 
-export const hasVisit = () => visitHandle() !== null || location.hash.startsWith(PREFIX);
+export const hasVisit = () => visitHandle() !== null || location.hash === XIAONING_HASH || location.hash.startsWith(PREFIX);
 
 export function leaveVisit() {
   const path = visitHandle() ? "/" : location.pathname;
@@ -61,6 +64,11 @@ async function readLive(handle: string): Promise<VisitCard | null> {
 export async function readVisit(): Promise<VisitCard | null> {
   const handle = visitHandle();
   if (handle) return readLive(handle);
+  if (location.hash === XIAONING_HASH) {
+    const { XIAONING } = await import("./town");
+    const { host, home, family, decor } = XIAONING;
+    return { v: 1, host, home, family, decor };
+  }
   if (!hasVisit()) return null;
   try {
     const raw = await pipe(fromB64(location.hash.slice(PREFIX.length)), new DecompressionStream("deflate-raw"));

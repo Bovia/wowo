@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Canvas } from "@react-three/fiber";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -668,6 +669,7 @@ export default function Wowo() {
                     {v.name}
                   </button>
                 ))}
+                <Link href="/town" className="whitespace-nowrap rounded-full px-3 py-1 text-[#6b4a35]">出门 ↗</Link>
               </div>
               )}
             </header>
@@ -862,7 +864,7 @@ export default function Wowo() {
                 onClick={goHome}
                 className="shrink-0 rounded-full bg-[#6b4a35] px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm sm:text-sm"
               >
-                {fromTown ? "回镇上" : "离开"}
+                {fromDistrict === "apartment" ? "回楼下" : fromTown ? "回镇上" : "离开"}
               </button>
               {chrome && follow === null && (
                 <div className="no-scrollbar flex min-w-0 justify-center gap-1.5 overflow-x-auto">

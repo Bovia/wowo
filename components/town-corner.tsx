@@ -6,7 +6,8 @@ import { ContactShadows, Html, OrbitControls } from "@react-three/drei";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Color, Object3D, type Group, type InstancedMesh } from "three";
 import { NPCS } from "@/lib/town";
-import { visitLink } from "@/lib/visit";
+import { apartmentBuilding } from "@/lib/apartment-building";
+import { XIAONING_VISIT_URL, visitLink } from "@/lib/visit";
 import { Parts, catParts, personParts } from "./creatures";
 import "./town-corner.css";
 
@@ -103,7 +104,7 @@ function Street() {
     for(let i=0;i<9;i++) a.push(b([6.3+(i%3)*.2,.86+Math.floor(i/3)*.27,.16],[.09,.16,.035],["#c28a6b","#9cab82","#c4aa66"][i%3]));
     return a;
   },[]);
-  return <><Solid items={items}/><Plant position={[-6,.25,-.5]} pink/><Plant position={[5.15,.12,-1.1]}/>{[-3.7,-1.1,3.2].map(x=><Plant key={x} position={[x,.5,.65]} small/>)}{[-6.6,-.4,6.6].map(x=><pointLight key={x} position={[x+.4,2.5,1.55]} color="#ffc080" intensity={5} distance={4} decay={2}/>)}</>;
+  return <><Solid items={items}/><Plant position={[-6,.25,-.5]} pink/><Plant position={[4.05,.12,.1]}/>{[-3.7,-1.1,3.2].map(x=><Plant key={x} position={[x,.5,.65]} small/>)}{[-6.6,-.4,6.6].map(x=><pointLight key={x} position={[x+.4,2.5,1.55]} color="#ffc080" intensity={5} distance={4} decay={2}/>)}</>;
 }
 function Tram({paused}: {paused:boolean}) {
   const ref=useRef<Group>(null); const t=useRef(0);
@@ -131,6 +132,7 @@ function Fit() {
   useLayoutEffect(()=>{const camera=get().camera; camera.zoom=Math.min(size.width/22,size.height/17);camera.updateProjectionMatrix();},[get,size]);
   return null;
 }
+const APARTMENT = apartmentBuilding(false);
 const HOUSE_A=building(2.9,3,"#987c70","#59676b",true);
 const HOUSE_B=building(2.75,2,"#b4aa94","#68756e",true);
 const CAFE=building(2.8,1,"#a18569","#606b6e",false);
@@ -145,6 +147,13 @@ function Scene({paused,onSelect}:{paused:boolean;onSelect:(id:number)=>void}) {
         <Solid items={items}/><Html position={[0,id===2?1.85:1.8,1.38]} transform distanceFactor={7}><button className="wowo-corner-sign" onClick={()=>onSelect(id)}>{id===2?"晚 风 食 堂":label}</button></Html>
         <pointLight position={[0,.9,1.7]} color="#ffb769" intensity={7} distance={3.3}/>
       </group>)}
+      <group position={[5.7,.04,-1.95]} scale={.45}
+        onClick={event => { if (event.delta < 6) { event.stopPropagation(); location.assign(XIAONING_VISIT_URL); } }}>
+        <Solid items={APARTMENT}/>
+        <Html position={[0,4.2,2.1]} center zIndexRange={[20,0]}>
+          <a className="apartment-door" style={{whiteSpace:"nowrap"}} href={XIAONING_VISIT_URL}>小宁的家 ↗</a>
+        </Html>
+      </group>
       <Tram paused={paused}/><Neighbor paused={paused}/><Neighbor paused={paused} index={1}/><Neighbor paused={paused} cat/>
     </group>
     <ContactShadows position={[0,-.46,0]} opacity={.32} scale={35} blur={2.8} far={12} resolution={512} frames={1}/>
@@ -156,7 +165,7 @@ export default function TownCorner() {
   async function visit(id:number) {setBusy(true);setError(false);try {const n=NPCS[id];const url=await visitLink({v:1,host:n.host,home:n.home,decor:n.decor,family:n.family});location.href=url.replace('/#','/?from=town#');}catch{setError(true);setBusy(false);}}
   return <main className="wowo-corner-page">
     <Canvas key={version} orthographic shadows dpr={[1,1.75]} camera={{position:[13,11,17],zoom:45,near:.1,far:100}} gl={{antialias:true}}><Scene paused={paused} onSelect={setSelected}/></Canvas>
-    <header className="wowo-corner-header"><Link href="/" className="wowo-corner-brand">窝窝<span>镇</span></Link><div className="wowo-corner-weather"><span/> 黄昏 · 晚风街</div><nav className="wowo-corner-nav"><Link className="wowo-corner-home" href="/town?neighbors=1">镇上邻居</Link><Link className="wowo-corner-home" href="/town/apartment">公寓区 · 小宁 →</Link><Link className="wowo-corner-home" href="/">回我的家 ↗</Link></nav></header>
+    <header className="wowo-corner-header"><Link href="/" className="wowo-corner-brand">窝窝<span>镇</span></Link><div className="wowo-corner-weather"><span/> 黄昏 · 晚风街</div><nav className="wowo-corner-nav"><Link className="wowo-corner-home" href="/town?neighbors=1">镇上邻居</Link><Link className="wowo-corner-home" href="/town/apartment">公寓楼下</Link><Link className="wowo-corner-home" href="/">回我的家 ↗</Link></nav></header>
     <section className="wowo-corner-intro"><div className="wowo-corner-eyebrow">WOWO · A LITTLE NEIGHBORHOOD</div><h1>晚风刚好，<br/>在街角待一会。</h1><p>灯亮了，邻居也回来了。</p></section>
     {selected!==null && <aside className="wowo-corner-card"><button className="wowo-corner-close" aria-label="关闭" onClick={()=>setSelected(null)}>×</button><div className="wowo-corner-eyebrow">{selected===2 ? "街角小店":"邻居的窝"}</div><h2>{selected===2?"晚风食堂":`${NPCS[selected].host}的家`}</h2><p>{selected===2?"今晚的灯，先为路过的人亮着。小店暂时还不能进去。":"门前留着一盏灯，进来坐坐吧。"}</p>{selected<2&&<button className="wowo-corner-visit" disabled={busy} onClick={()=>visit(selected)}>{busy?"正在开门…":"去串门 →"}</button>}{error&&<p>开门失败，请重试。</p>}</aside>}
     <footer className="wowo-corner-footer"><div><span className="wowo-corner-dot"/> 一小块正在生长的日常<span className="wowo-corner-hint">拖动看看街角 · 滚轮或双指缩放 · 点房子串门</span></div><div className="wowo-corner-controls"><button aria-label={paused?"继续街景动画":"暂停街景动画"} onClick={()=>setPaused(!paused)}>{paused?"▷ 继续":"Ⅱ 停一会"}</button><button onClick={()=>setVersion(version+1)}>↺ 初始视角</button></div></footer>
