@@ -10,8 +10,8 @@ function jpegFromDataUrl(photo: string) {
   return Buffer.from(m[1], "base64");
 }
 
-export async function GET() {
-  const user = await currentUser();
+export async function GET(request: Request) {
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const rows = await sql()`
     select id, blob_url, caption, stamp, at
@@ -32,7 +32,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await currentUser();
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!storageReady()) return Response.json({ error: "no-storage" }, { status: 503 });
   const body = (await request.json()) as { id: string; photo: string; caption?: string; stamp?: string; at?: number };
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const user = await currentUser();
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return Response.json({ error: "bad-id" }, { status: 400 });

@@ -421,7 +421,7 @@ export default function Town() {
           <p className="ink-soft mt-1 text-xs text-[#8b6b55]">{lots.length} 户人家 · 点一户进去串门</p>
         </div>
         <Link
-          href="/"
+          href="/home"
           className="pointer-events-auto rounded-full bg-[#fffaf2]/90 px-3 py-1.5 text-sm font-semibold text-[#6b4a35] shadow-sm backdrop-blur hover:bg-white"
         >
           回我家

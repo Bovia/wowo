@@ -1,3 +1,4 @@
+import { homeStorage } from "./home-storage";
 import { planOf, type Layout, type Placement, type Side } from "./home";
 
 export type Spot = { x: number; z: number; side: Side; room: string; y?: number };
@@ -6,7 +7,7 @@ const KEY = "wowo:decor";
 
 export function loadAllDecor(): Record<string, Spot[]> {
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {};
+    return JSON.parse(homeStorage.getItem(KEY) ?? "{}") ?? {};
   } catch {
     return {};
   }
@@ -18,7 +19,7 @@ function loadAll(): Record<string, Spot[]> {
 
 export function saveAllDecor(all: Record<string, Spot[]>) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(all));
+    homeStorage.setItem(KEY, JSON.stringify(all));
   } catch {}
 }
 

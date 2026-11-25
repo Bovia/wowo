@@ -1,3 +1,4 @@
+import { homeStorage } from "./home-storage";
 export type Snap = {
   id: string;
   photo: string;
@@ -56,7 +57,7 @@ export function captionFor(ctx: {
 
 export function loadAlbum(): Snap[] {
   try {
-    const raw = localStorage.getItem(ALBUM_KEY);
+    const raw = homeStorage.getItem(ALBUM_KEY);
     return raw ? (JSON.parse(raw) as Snap[]) : [];
   } catch {
     return [];
@@ -67,13 +68,13 @@ export function saveAlbum(album: Snap[]): Snap[] {
   let list = album.slice(0, ALBUM_MAX);
   while (list.length) {
     try {
-      localStorage.setItem(ALBUM_KEY, JSON.stringify(list));
+      homeStorage.setItem(ALBUM_KEY, JSON.stringify(list));
       return list;
     } catch {
       list = list.slice(0, -1);
     }
   }
-  localStorage.removeItem(ALBUM_KEY);
+  homeStorage.removeItem(ALBUM_KEY);
   return list;
 }
 

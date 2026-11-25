@@ -21,8 +21,8 @@ const item = z.object({
 
 const body = z.object({ items: z.array(item).max(500) });
 
-export async function GET() {
-  const user = await currentUser();
+export async function GET(request: Request) {
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const rows = await sql()`
     select id, room, name, count, note, color, warn, category, price, to_char(bought_at, 'YYYY-MM-DD') as bought_at,
@@ -52,7 +52,7 @@ export async function GET() {
 
 // 批量传：每样东西只有比云上新才覆盖
 export async function POST(request: Request) {
-  const user = await currentUser();
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const parsed = body.safeParse(await request.json());
   if (!parsed.success) return Response.json({ error: "bad-items" }, { status: 400 });

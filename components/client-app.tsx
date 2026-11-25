@@ -1,12 +1,22 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useSyncExternalStore } from "react";
+import { hasVisit } from "@/lib/visit";
+import { TownApp } from "./town-app";
 
-const Wowo = dynamic(() => import("./wowo"), {
-  ssr: false,
-  loading: () => <div className="wowo-bg h-dvh w-full" />,
-});
+export const HomeScene = dynamic(() => import("./wowo"), { ssr: false });
+
+function subscribe(callback: () => void) {
+  window.addEventListener("hashchange", callback);
+  window.addEventListener("popstate", callback);
+  return () => {
+    window.removeEventListener("hashchange", callback);
+    window.removeEventListener("popstate", callback);
+  };
+}
 
 export function ClientApp() {
-  return <Wowo />;
+  const visiting = useSyncExternalStore(subscribe, hasVisit, () => false);
+  return visiting ? <HomeScene/> : <TownApp/>;
 }

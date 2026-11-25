@@ -1,3 +1,4 @@
+import { homeStorage } from "./home-storage";
 import type { Layout } from "./home";
 import { DEMO_ROOMS } from "./layouts";
 
@@ -47,7 +48,7 @@ const seedId = (key: string, id: string) => (id.startsWith("seed-") ? `${key}#${
 
 export function loadInventory(): Inventory {
   try {
-    const inv = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Inventory;
+    const inv = JSON.parse(homeStorage.getItem(KEY) ?? "{}") as Inventory;
     for (const [key, items] of Object.entries(inv)) inv[key] = items.map((it) => ({ ...it, id: seedId(key, it.id) }));
     return inv;
   } catch {
@@ -56,7 +57,7 @@ export function loadInventory(): Inventory {
 }
 
 export function saveInventory(inv: Inventory) {
-  localStorage.setItem(KEY, JSON.stringify(inv));
+  homeStorage.setItem(KEY, JSON.stringify(inv));
 }
 
 export function itemsFor(inv: Inventory, layout: Layout, room: string): InvItem[] {

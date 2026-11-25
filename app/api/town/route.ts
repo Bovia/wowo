@@ -4,7 +4,7 @@ import type { Spot } from "@/lib/decor";
 import type { Family } from "@/lib/family";
 import type { Scan } from "@/lib/scan";
 import type { TownHome } from "@/lib/town";
-import type { HomeRef } from "@/lib/visit";
+import { savedHomeRef, type HomeRef } from "@/lib/visit";
 
 const MAX = 24;
 
@@ -24,7 +24,8 @@ export async function GET() {
     const family = row.family as Family;
     const scan = (row.scan as Scan | null) ?? null;
     const layoutId = (row.layout_id as string | null) ?? null;
-    const [home, key]: [HomeRef, string] = scan ? [{ s: scan }, "scan"] : layoutId === "demo2" ? [{ d: "demo2" }, "demo2"] : layoutId ? [{ t: layoutId }, layoutId] : [{ d: "demo" }, "demo"];
+    const home: HomeRef = savedHomeRef(layoutId, scan);
+    const key = "s" in home ? "scan" : "d" in home ? home.d : home.t;
     const furniture = (row.furniture as Record<string, Spot[]> | null) ?? {};
     const name = family?.me?.name;
     return { handle, host: name && name !== "我" ? name : `@${handle}`, home, decor: furniture[key] ?? null, family };

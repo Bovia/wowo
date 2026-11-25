@@ -1,10 +1,11 @@
+import { DEFAULT_FAMILY } from "@/lib/family";
 import { sql } from "@/lib/db";
 import { ensureResident } from "@/lib/resident";
 import { currentUser } from "@/lib/session";
 import type { HomePayload } from "@/lib/snapshot";
 
-export async function GET() {
-  const user = await currentUser();
+export async function GET(request: Request) {
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const rows = await sql()`
     select h.host_name, h.family, h.layout_id, h.scan, h.furniture, h.battery, r.handle
@@ -27,7 +28,7 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const user = await currentUser();
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const body = (await request.json()) as HomePayload;
   if (!body?.family) return Response.json({ error: "bad-home" }, { status: 400 });
@@ -55,4 +56,17 @@ export async function PUT(request: Request) {
   `;
   const handle = await ensureResident(user.id);
   return Response.json({ ok: true, handle });
+}
+
+export async function POST(request: Request) {
+  const user = await currentUser(request);
+  if (!user || request.headers.get("x-wowo-owner") !== user.id) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  await sql()`
+    insert into homes (user_id, host_name, family, layout_id, furniture)
+    values (${user.id}::uuid, '我家', ${JSON.stringify(DEFAULT_FAMILY)}::jsonb, 'demo2', '{}'::jsonb)
+    on conflict (user_id) do nothing
+  `;
+  return Response.json({ ok: true });
 }

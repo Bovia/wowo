@@ -10,15 +10,15 @@ async function visibilityOf(userId: string): Promise<Visibility> {
   return (rows[0]?.visibility as Visibility | undefined) ?? "link";
 }
 
-export async function GET() {
-  const user = await currentUser();
+export async function GET(request: Request) {
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   return Response.json({ handle: await ensureResident(user.id), visibility: await visibilityOf(user.id) });
 }
 
 // 改门牌号，或者改谁能看（public = 上小镇）
 export async function PATCH(request: Request) {
-  const user = await currentUser();
+  const user = await currentUser(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const body = (await request.json()) as { handle?: string; visibility?: string };
 

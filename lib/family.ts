@@ -1,3 +1,4 @@
+import { homeStorage } from "./home-storage";
 export type HairStyle = "short" | "long" | "bun" | "buzz" | "beanie";
 export type Person = { name: string; hair: string; style: HairStyle; shirt: string; pants: string; skin: string };
 export type Coat = "cowBack" | "cowHead" | "orange" | "tabby" | "black" | "white" | "calico" | "blue";
@@ -44,21 +45,21 @@ export const DEFAULT_FAMILY: Family = {
 
 export const GUEST: Person = { name: "客人", hair: "#c9674a", style: "beanie", shirt: "#b9b4aa", pants: "#5b6f8f", skin: "#f1c9a5" };
 
-export const hasFamily = () => localStorage.getItem(KEY) !== null;
+export const hasFamily = () => homeStorage.getItem(KEY) !== null;
 
 export function loadFamily(): Family {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = homeStorage.getItem(KEY);
     if (raw) {
       const f = JSON.parse(raw) as Family;
-      if (f.me && Array.isArray(f.cats) && f.cats.length) return f;
+      if (f.me && Array.isArray(f.cats)) return f;
     }
   } catch {}
   return DEFAULT_FAMILY;
 }
 
 export function saveFamily(f: Family) {
-  localStorage.setItem(KEY, JSON.stringify(f));
+  homeStorage.setItem(KEY, JSON.stringify(f));
 }
 
 export function newCat(existing: Cat[]): Cat {

@@ -1,3 +1,4 @@
+import { homeStorage } from "./home-storage";
 import { saveAllDecor, type Spot } from "./decor";
 import { loadFamily, saveFamily, type Family } from "./family";
 import { loadBattery, saveBattery, type Battery } from "./battery";
@@ -18,7 +19,7 @@ export type HomePayload = {
 export function collectLocal(extra?: Partial<HomePayload>): HomePayload {
   let scan: Scan | null = null;
   try {
-    const raw = localStorage.getItem(SCAN_KEY);
+    const raw = homeStorage.getItem(SCAN_KEY);
     scan = raw ? (JSON.parse(raw) as Scan) : null;
   } catch {
     scan = null;
@@ -30,9 +31,9 @@ export function collectLocal(extra?: Partial<HomePayload>): HomePayload {
   return {
     hostName: host,
     family,
-    layoutId: extra?.layoutId !== undefined ? extra.layoutId : localStorage.getItem(LAYOUT_KEY),
+    layoutId: extra?.layoutId !== undefined ? extra.layoutId : homeStorage.getItem(LAYOUT_KEY),
     scan: extra?.scan !== undefined ? extra.scan : scan,
-    furniture: extra?.furniture ?? JSON.parse(localStorage.getItem("wowo:decor") ?? "{}"),
+    furniture: extra?.furniture ?? JSON.parse(homeStorage.getItem("wowo:decor") ?? "{}"),
     battery: extra?.battery ?? loadBattery(),
   };
 }
@@ -41,8 +42,8 @@ export function writeLocal(home: HomePayload) {
   saveFamily(home.family);
   if (home.battery) saveBattery(home.battery);
   saveAllDecor(home.furniture ?? {});
-  if (home.layoutId) localStorage.setItem(LAYOUT_KEY, home.layoutId);
-  else localStorage.removeItem(LAYOUT_KEY);
-  if (home.scan) localStorage.setItem(SCAN_KEY, JSON.stringify(home.scan));
-  else localStorage.removeItem(SCAN_KEY);
+  if (home.layoutId) homeStorage.setItem(LAYOUT_KEY, home.layoutId);
+  else homeStorage.removeItem(LAYOUT_KEY);
+  if (home.scan) homeStorage.setItem(SCAN_KEY, JSON.stringify(home.scan));
+  else homeStorage.removeItem(SCAN_KEY);
 }

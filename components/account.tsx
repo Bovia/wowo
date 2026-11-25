@@ -1,31 +1,23 @@
 "use client";
 
+import { homeRequest } from "@/lib/home-storage";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 import { isEmbed } from "@/lib/embed";
 import type { Inventory } from "@/lib/inventory";
-import { markSynced, merge, pending, type CloudItem } from "@/lib/items-sync";
+import { markSynced, pending } from "@/lib/items-sync";
 import type { Snap } from "@/lib/polaroid";
 import type { HomePayload } from "@/lib/snapshot";
 
 type Status = "idle" | "pulling" | "pushing" | "ok" | "error";
-
-// Neon Auth 归一化后的错误码
-const AUTH_ERRORS: Record<string, string> = {
-  invalid_credentials: "邮箱或密码不对",
-  user_not_found: "邮箱或密码不对",
-  email_address_invalid: "邮箱格式不太对",
-  weak_password: "密码至少 8 位",
-  user_already_exists: "这个邮箱已经有账号了，直接登录吧",
-};
 
 async function readJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
 async function pushHome(home: HomePayload) {
-  const res = await fetch("/api/home", {
+  const res = await homeRequest("/api/home", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(home),
@@ -39,7 +31,7 @@ async function pushItems(inv: Inventory) {
   const list = pending(inv);
   for (let i = 0; i < list.length; i += 500) {
     const batch = list.slice(i, i + 500);
-    const res = await fetch("/api/items", {
+    const res = await homeRequest("/api/items", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ items: batch }),
@@ -49,159 +41,53 @@ async function pushItems(inv: Inventory) {
   }
 }
 
-async function uploadAlbum(album: Snap[]) {
-  for (const snap of album) {
-    if (snap.photo.startsWith("http")) continue;
-    await fetch("/api/photos", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(snap),
-    });
-  }
-}
-
 export function AccountDock({
   hidden,
   collect,
-  apply,
-  album,
+  handle,
   dirtyKey,
   onHandle,
   inventory,
-  onItems,
 }: {
   hidden: boolean;
   collect: () => HomePayload;
-  apply: (home: HomePayload, photos: Snap[]) => void;
-  album: Snap[];
+  handle: string | null;
   dirtyKey: string;
   onHandle: (handle: string | null) => void;
   inventory: Inventory;
-  // 云上的东西合进来之后，交回去更新界面
-  onItems: (inventory: Inventory) => void;
 }) {
   const session = authClient.useSession();
   const user = session.data?.user ?? null;
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status>("idle");
-  const [handle, setHandle] = useState<string | null>(null);
-  const ready = useRef(false);
-  const collectRef = useRef(collect);
-  const applyRef = useRef(apply);
-  const albumRef = useRef(album);
-  const onHandleRef = useRef(onHandle);
-  const invRef = useRef(inventory);
-  const onItemsRef = useRef(onItems);
+  const [status, setStatus] = useState<Status>("ok");
+  const savedKey = useRef(dirtyKey);
+  const latest = useRef({collect, inventory, onHandle});
   const embed = isEmbed();
+  useEffect(() => { latest.current = {collect, inventory, onHandle}; }, [collect, inventory, onHandle]);
 
   useEffect(() => {
-    collectRef.current = collect;
-    applyRef.current = apply;
-    albumRef.current = album;
-    onHandleRef.current = onHandle;
-    invRef.current = inventory;
-    onItemsRef.current = onItems;
-  }, [collect, apply, album, onHandle, inventory, onItems]);
-
-  useEffect(() => {
-    onHandleRef.current(handle);
-  }, [handle]);
-
-  useEffect(() => {
-    if (hidden || embed || !user || ready.current) return;
-    let cancel = false;
-    (async () => {
-      setStatus("pulling");
+    if (hidden || embed || !user) return;
+    const timer = window.setTimeout(async () => {
       try {
-        const homeRes = await fetch("/api/home");
-        // 读失败不能当成「云上是空的」，否则会拿本机这份去盖
-        if (!homeRes.ok) throw new Error("pull-home");
-        const homeBody = await readJson<{ home: HomePayload | null; handle?: string }>(homeRes);
-        if (cancel) return;
-        if (!homeBody.home) {
+        if (savedKey.current !== dirtyKey) {
           setStatus("pushing");
-          setHandle(await pushHome(collectRef.current()));
-          await uploadAlbum(albumRef.current);
-        } else {
-          const photosRes = await fetch("/api/photos");
-          const photosBody = photosRes.ok ? await readJson<{ photos: Snap[] }>(photosRes) : { photos: [] };
-          if (cancel) return;
-          applyRef.current(homeBody.home, photosBody.photos ?? []);
-          setHandle(homeBody.handle ?? null);
+          const handle = await pushHome(latest.current.collect());
+          latest.current.onHandle(handle);
+          savedKey.current = dirtyKey;
         }
-        // 东西单独合：按样比新旧，两台设备各改各的不会互相盖掉
-        const itemsRes = await fetch("/api/items");
-        if (!itemsRes.ok) throw new Error("pull-items");
-        const { items } = await readJson<{ items: CloudItem[] }>(itemsRes);
-        if (cancel) return;
-        const merged = merge(invRef.current, items);
-        onItemsRef.current(merged);
-        await pushItems(merged);
-        ready.current = true;
+        await pushItems(latest.current.inventory);
         setStatus("ok");
-      } catch {
-        if (!cancel) setStatus("error");
-      }
-    })();
-    return () => {
-      cancel = true;
-    };
-  }, [user, hidden, embed]);
-
-  useEffect(() => {
-    if (hidden || embed || !user || !ready.current) return;
-    const id = window.setTimeout(() => {
-      setStatus("pushing");
-      Promise.all([pushHome(collectRef.current()), pushItems(invRef.current)])
-        .then(([h]) => {
-          if (h) setHandle(h);
-          setStatus("ok");
-        })
-        .catch(() => setStatus("error"));
-    }, 1400);
-    return () => window.clearTimeout(id);
+      } catch { setStatus("error"); }
+    }, 500);
+    return () => window.clearTimeout(timer);
   }, [dirtyKey, user, hidden, embed]);
 
-  if (hidden || embed) return null;
-
-  const withPassword = async (mode: "in" | "up") => {
-    if (!email.trim() || !password) return;
-    setBusy(true);
-    setNote(null);
-    let code: string | undefined;
-    let failed = false;
-    // Neon 的客户端有时返回 error，有时直接抛（比如密码错），两种都要接住
-    try {
-      const { error } =
-        mode === "up"
-          ? await authClient.signUp.email({ email: email.trim(), password, name: email.trim().split("@")[0] })
-          : await authClient.signIn.email({ email: email.trim(), password });
-      if (error) {
-        failed = true;
-        code = error.code;
-      }
-    } catch (e) {
-      failed = true;
-      code = (e as { code?: string }).code;
-    }
-    setBusy(false);
-    if (failed) {
-      setNote(AUTH_ERRORS[code ?? ""] ?? (mode === "up" ? "开账号没成功，待会再试" : "登录没成功，待会再试"));
-      return;
-    }
-    setOpen(false);
-  };
+  if (hidden || embed || !user) return null;
 
   const signOut = async () => {
-    ready.current = false;
     await authClient.signOut();
-    setHandle(null);
-    setOpen(false);
-    setStatus("idle");
+    onHandle(null);
+    location.replace("/town");
   };
 
   return (
@@ -226,7 +112,7 @@ export function AccountDock({
                     ? "这次没同步上，待会再试试。"
                     : "正在把家里人存到云上…"}
               </p>
-              {handle && <HandleRow handle={handle} onChange={setHandle} />}
+              {handle && <HandleRow handle={handle} onChange={onHandle} />}
               {handle && <TownSwitch />}
               <button
                 onClick={signOut}
@@ -235,61 +121,7 @@ export function AccountDock({
                 退出登录
               </button>
             </>
-          ) : (
-            <>
-              <p className="text-sm font-semibold text-[#6b4a35]">把窝存到云上</p>
-              <p className="mt-1 text-xs leading-relaxed text-[#8b6b55]">不登录也能玩。登了之后，人和猫、家具、户型会跟着账号走。</p>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void withPassword("in");
-                }}
-              >
-                <label className="mt-3 block text-xs text-[#8b6b55]" htmlFor="wowo-email">
-                  邮箱
-                </label>
-                <input
-                  id="wowo-email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@mail.com"
-                  className="mt-1 w-full rounded-xl border border-[#ead9c4] bg-white px-3 py-2 text-base text-[#6b4a35] outline-none focus:border-[#ff8a5b]"
-                />
-                <label className="mt-2 block text-xs text-[#8b6b55]" htmlFor="wowo-pass">
-                  密码
-                </label>
-                <input
-                  id="wowo-pass"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="至少 8 位"
-                  className="mt-1 w-full rounded-xl border border-[#ead9c4] bg-white px-3 py-2 text-base text-[#6b4a35] outline-none focus:border-[#ff8a5b]"
-                />
-                {note && <p className="mt-2 text-xs text-[#ff8a5b]">{note}</p>}
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="submit"
-                    disabled={busy || !email.trim() || !password}
-                    className="flex-1 rounded-full bg-[#6b4a35] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  >
-                    {busy ? "…" : "登录"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || !email.trim() || !password}
-                    onClick={() => withPassword("up")}
-                    className="flex-1 rounded-full bg-[#f6ecdf] px-3 py-2 text-sm font-semibold text-[#8b6b55] disabled:opacity-50"
-                  >
-                    开个账号
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
+          ) : null}
         </div>
       )}
     </div>
@@ -300,7 +132,7 @@ export async function cloudKeepPhoto(snap: Snap) {
   if (isEmbed()) return;
   const { data } = await authClient.getSession();
   if (!data?.user) return;
-  await fetch("/api/photos", {
+  await homeRequest("/api/photos", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(snap),
@@ -311,7 +143,7 @@ export async function cloudDropPhoto(id: string) {
   if (isEmbed()) return;
   const { data } = await authClient.getSession();
   if (!data?.user) return;
-  await fetch(`/api/photos?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  await homeRequest(`/api/photos?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 // 门牌号：镇上别人认得你的名字，串门链接就是 /@门牌号
@@ -327,7 +159,7 @@ function HandleRow({ handle, onChange }: { handle: string; onChange: (handle: st
     setBusy(true);
     setNote(null);
     try {
-      const res = await fetch("/api/me", {
+      const res = await homeRequest("/api/me", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ handle: next }),
@@ -424,7 +256,7 @@ function TownSwitch() {
 
   useEffect(() => {
     let cancel = false;
-    fetch("/api/me")
+    homeRequest("/api/me")
       .then((r) => readJson<{ visibility?: string }>(r))
       .then((b) => !cancel && setOn(b.visibility === "public"))
       .catch(() => !cancel && setOn(false));
@@ -439,7 +271,7 @@ function TownSwitch() {
     setOn(next);
     setNote(null);
     try {
-      const res = await fetch("/api/me", {
+      const res = await homeRequest("/api/me", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ visibility: next ? "public" : "link" }),

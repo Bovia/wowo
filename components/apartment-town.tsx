@@ -20,7 +20,7 @@ function ApartmentScene({onSelect}:{onSelect:()=>void}) {
 export default function ApartmentTown(){const [reset,setReset]=useState(0);
  function visit(){location.assign(XIAONING_VISIT_URL);}
  return <main className="wowo-corner-page"><Canvas key={reset} orthographic shadows dpr={[1,1.75]} camera={{position:[18,16,23],zoom:38,near:.1,far:100}}><ApartmentScene onSelect={visit}/></Canvas>
- <header className="wowo-corner-header"><Link href="/town" className="wowo-corner-brand">窝窝<span>镇</span></Link><div className="wowo-corner-weather">公寓区 · 新邻居</div><nav className="wowo-corner-nav"><Link href="/town" className="wowo-corner-home">← 晚风街</Link><Link href="/" className="wowo-corner-home">我的家 ↗</Link></nav></header>
+ <header className="wowo-corner-header"><Link href="/town" className="wowo-corner-brand">窝窝<span>镇</span></Link><div className="wowo-corner-weather">公寓区 · 新邻居</div><nav className="wowo-corner-nav"><Link href="/town" className="wowo-corner-home">← 晚风街</Link><Link href="/home" className="wowo-corner-home">我的家 ↗</Link></nav></header>
  <section className="wowo-corner-intro"><div className="wowo-corner-eyebrow">WOWO · APARTMENT</div><h1>万家灯火里，<br/>小宁搬来了。</h1><p>一栋高楼，一扇为朋友亮着的窗。</p></section>
  <footer className="wowo-corner-footer"><div><span className="wowo-corner-dot"/> 小宁住在这栋楼的边户<span className="wowo-corner-hint">拖动环看 · 滚轮或双指缩放 · 点亮着的门牌串门</span></div><div className="wowo-corner-controls"><button onClick={visit}>去小宁家 ↗</button><button onClick={()=>setReset(reset+1)}>↺ 初始视角</button></div></footer></main>;
 }

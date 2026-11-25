@@ -1,3 +1,4 @@
+import { homeStorage } from "./home-storage";
 import type { InvItem, Inventory } from "./inventory";
 
 // 云上一行：物品 + 在哪个屋 + 是不是已经拿走了
@@ -10,13 +11,13 @@ type Stamps = Record<string, number>;
 
 function read(key: string): Stamps {
   try {
-    return JSON.parse(localStorage.getItem(key) ?? "{}") as Stamps;
+    return JSON.parse(homeStorage.getItem(key) ?? "{}") as Stamps;
   } catch {
     return {};
   }
 }
 
-const write = (key: string, v: Stamps) => localStorage.setItem(key, JSON.stringify(v));
+const write = (key: string, v: Stamps) => homeStorage.setItem(key, JSON.stringify(v));
 
 export function markGone(ids: string[], now = Date.now()) {
   if (!ids.length) return;

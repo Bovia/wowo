@@ -1,12 +1,13 @@
 "use client";
 
+import { homeStorage } from "@/lib/home-storage";
 import Link from "next/link";
 import { Canvas } from "@react-three/fiber";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { planOf, rotated, seat, type Layout, type Placement } from "@/lib/home";
-import { applySpots, loadAllDecor, loadDecor, saveDecor, toSpots, type Spot } from "@/lib/decor";
-import { hasVisit, leaveVisit, readVisit, visitHandle, type HomeRef, type VisitCard } from "@/lib/visit";
+import { applySpots, loadAllDecor, loadDecor, saveDecor, toSpots } from "@/lib/decor";
+import { hasVisit, savedHomeRef, readVisit, visitHandle, type HomeRef, type VisitCard } from "@/lib/visit";
 import { Ambience, SOUND_FOR, SOUND_NAME, type Sound } from "@/lib/ambience";
 import {
   applyEvent,
@@ -48,7 +49,6 @@ import { isClothes } from "@/lib/wardrobe";
 import type { Receipt } from "@/lib/receipt";
 import { isEmbed } from "@/lib/embed";
 import { HouseScene, type IntroMode } from "./house-scene";
-import { writeLocal, type HomePayload } from "@/lib/snapshot";
 
 const SEEN_KEY = "wowo:intro-seen";
 const MINE_KEY = "wowo:my-layout";
@@ -56,7 +56,7 @@ const SCAN_KEY = "wowo:my-scan";
 
 function loadScan(): Scan | null {
   try {
-    const raw = localStorage.getItem(SCAN_KEY);
+    const raw = homeStorage.getItem(SCAN_KEY);
     return raw ? (JSON.parse(raw) as Scan) : null;
   } catch {
     return null;
@@ -87,33 +87,23 @@ function resolveHome(home: HomeRef): Layout | null {
   return safeLayout(home.s);
 }
 
-function decorFromSpots(furniture: Record<string, Spot[]>, extra: Layout | null) {
-  const layouts = [...VISIT_LAYOUTS, ...TEMPLATES, ...(extra ? [extra] : [])];
-  const out: Record<string, Placement[] | null> = {};
-  for (const [id, spots] of Object.entries(furniture ?? {})) {
-    const layout = layouts.find((l) => l.id === id);
-    if (layout) out[id] = applySpots(layout, spots);
-  }
-  return out;
-}
-
-export default function Wowo() {
+export default function Wowo({ owner = false, initialHandle = null }: { owner?: boolean; initialHandle?: string | null }) {
   const [introMode, setIntroMode] = useState<IntroMode>(() =>
-    localStorage.getItem(SEEN_KEY) ? "short" : "full",
+    homeStorage.getItem(SEEN_KEY) ? "short" : "full",
   );
   const [introRun, setIntroRun] = useState(0);
   const [skipTick, setSkipTick] = useState(0);
   const [phase, setPhase] = useState<"intro" | "home">("intro");
-  const [mineId, setMineId] = useState<string | null>(() => localStorage.getItem(MINE_KEY));
-  const [view, setView] = useState<View>(DEMOS[0].id);
+  const [mineId, setMineId] = useState<string | null>(() => homeStorage.getItem(MINE_KEY));
+  const [view, setView] = useState<View>(() => loadScan() || (mineId && mineId !== DEMOS[0].id) ? "mine" : DEMOS[0].id);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const [scan, setScan] = useState<Scan | null>(loadScan);
   const scanned = useMemo(() => safeLayout(scan), [scan]);
-  const mine = scanned ?? TEMPLATES.find((t) => t.id === mineId) ?? null;
-  const [knocking, setKnocking] = useState(hasVisit);
+  const mine = scanned ?? (mineId && mineId !== DEMOS[0].id ? resolveHome(savedHomeRef(mineId, null)) : null);
+  const [knocking, setKnocking] = useState(() => !owner && hasVisit());
   const [visit, setVisit] = useState<VisitCard | null>(null);
   const visitLayout = useMemo(() => (visit ? resolveHome(visit.home) : null), [visit]);
   const visiting = visit !== null && visitLayout !== null;
@@ -135,26 +125,29 @@ export default function Wowo() {
   }, [interactive, hovered]);
 
   useEffect(() => {
+    if (owner) return;
     const knock = () => hasVisit() && setKnocking(true);
     window.addEventListener("hashchange", knock);
     return () => window.removeEventListener("hashchange", knock);
-  }, []);
+  }, [owner]);
 
   useEffect(() => {
     if (!knocking) return;
     const handle = visitHandle();
+    let active = true;
     readVisit().then((card) => {
+      if (!active) return;
       if (card && resolveHome(card.home)) {
         setVisit(card);
         setIntroMode("full");
         setPhase("intro");
         setIntroRun((n) => n + 1);
       } else {
-        leaveVisit();
-        if (handle) setMissNote(`没找到 @${handle} 的窝`);
+        setMissNote(handle ? `没找到 @${handle} 的窝` : "这张门牌暂时打不开");
       }
       setKnocking(false);
     });
+    return () => { active = false; };
   }, [knocking]);
 
   // 从小镇点进来串门的，离开就回镇上
@@ -162,20 +155,7 @@ export default function Wowo() {
   const fromTown = fromDistrict === "town" || fromDistrict === "apartment";
   const router = useRouter();
   const goHome = () => {
-    if (fromTown) {
-      router.push(fromDistrict === "apartment" ? "/town/apartment" : "/town");
-      return;
-    }
-    leaveVisit();
-    setVisit(null);
-    setEye(false);
-    setFollow(null);
-    setSelected(null);
-    setHovered(null);
-    setCamFree(true);
-    setDest(null);
-    setStepNote(null);
-    setChrome(true);
+    router.push(fromDistrict === "apartment" ? "/town/apartment" : "/town");
   };
 
   const sendWalk = (x: number, z: number) => {
@@ -189,12 +169,6 @@ export default function Wowo() {
     const id = window.setTimeout(() => setStepNote(null), 1800);
     return () => window.clearTimeout(id);
   }, [stepNote]);
-
-  useEffect(() => {
-    if (!missNote || phase !== "home") return;
-    const id = window.setTimeout(() => setMissNote(null), 3500);
-    return () => window.clearTimeout(id);
-  }, [missNote, phase]);
 
   const replay = () => {
     setSelected(null);
@@ -212,15 +186,15 @@ export default function Wowo() {
   };
 
   const chooseTemplate = (t: Layout) => {
-    localStorage.setItem(MINE_KEY, t.id);
-    localStorage.removeItem(SCAN_KEY);
+    homeStorage.setItem(MINE_KEY, t.id);
+    homeStorage.removeItem(SCAN_KEY);
     setMineId(t.id);
     setScan(null);
     showMine();
   };
 
   const chooseScan = (s: Scan) => {
-    localStorage.setItem(SCAN_KEY, JSON.stringify(s));
+    homeStorage.setItem(SCAN_KEY, JSON.stringify(s));
     setScan(s);
     showMine();
   };
@@ -459,13 +433,13 @@ export default function Wowo() {
   const keepSnap = (s: Snap) => {
     setAlbum(saveAlbum([s, ...album.filter((a) => a.id !== s.id)]));
     setSnap(null);
-    void cloudKeepPhoto(s);
+    if (!visiting) void cloudKeepPhoto(s);
   };
 
   const dropSnap = (id: string) => {
     setAlbum(saveAlbum(album.filter((a) => a.id !== id)));
     setSnap(null);
-    void cloudDropPhoto(id);
+    if (!visiting) void cloudDropPhoto(id);
   };
 
   const [decorating, setDecorating] = useState(false);
@@ -481,11 +455,11 @@ export default function Wowo() {
   const visitFurniture = useMemo(() => (visit && visitLayout ? applySpots(visitLayout, visit.decor) : null), [visit, visitLayout]);
   const furniture = visiting ? visitFurniture : homeFurniture;
   const [shareOpen, setShareOpen] = useState(false);
-  const [handle, setHandle] = useState<string | null>(null);
+  const [handle, setHandle] = useState(initialHandle);
   const shareCard = (host: string): VisitCard => ({
     v: 1,
     host,
-    home: layout.demo ? { d: layout.id } : scan ? { s: scan } : { t: mineId ?? layout.id },
+    home: savedHomeRef(homeLayout.id, view === "mine" ? scan : null),
     decor: homeFurniture ? toSpots(homeFurniture) : null,
     family,
   });
@@ -529,6 +503,7 @@ export default function Wowo() {
     setDecorNote(null);
   };
 
+  if (missNote) return <main className="wowo-bg grid h-dvh place-content-center gap-4 text-center"><p>{missNote}</p><a href="/town">回社区</a></main>;
   if (knocking)
     return (
       <div className="wowo-bg grid h-dvh w-full place-items-center">
@@ -587,7 +562,7 @@ export default function Wowo() {
           onFollow={startFollow}
           onCamSettled={() => setCamFree(true)}
           onIntroDone={() => {
-            localStorage.setItem(SEEN_KEY, "1");
+            homeStorage.setItem(SEEN_KEY, "1");
             setPhase("home");
             setChrome(true);
           }}
@@ -627,8 +602,7 @@ export default function Wowo() {
                 hidden={visiting}
                 onHandle={setHandle}
                 inventory={inventory}
-                onItems={putInventory}
-                album={album}
+                handle={handle}
                 dirtyKey={JSON.stringify({ family, inventory, battery, decor, mineId, scan })}
                 collect={() => ({
                   hostName: family.me.name && family.me.name !== "我" ? family.me.name : "我家",
@@ -638,22 +612,11 @@ export default function Wowo() {
                   furniture: loadAllDecor(),
                   battery,
                 })}
-                apply={(home: HomePayload, photos: Snap[]) => {
-                  writeLocal(home);
-                  setFamily(home.family);
-                  if (home.battery) setBattery(home.battery);
-                  setScan(home.scan);
-                  setMineId(home.layoutId);
-                  setDecor(decorFromSpots(home.furniture, home.scan ? safeLayout(home.scan) : null));
-                  if (photos.length) setAlbum(saveAlbum(photos));
-                  if (home.layoutId === "demo2" && !home.scan) setView("demo2");
-                  else if (home.layoutId || home.scan) setView("mine");
-                }}
               />
               {visiting ? (
                 <div className="rounded-full bg-white/70 px-3 py-1.5 text-sm shadow-sm backdrop-blur">
                   <span className="text-[#6b4a35]">
-                    在<b>{visit.host}</b>家串门
+                    在<b>{visit.host}</b>家串门　<a className="font-semibold" href="/home">回我的家 ↗</a>
                   </span>
                 </div>
               ) : (
@@ -852,9 +815,9 @@ export default function Wowo() {
             </p>
           </div>
 
-          {(stepNote ?? missNote) && (
+          {stepNote && (
             <div className="card-pop pointer-events-none absolute inset-x-0 top-[22%] z-10 mx-auto w-fit rounded-full bg-[#fffaf2]/95 px-4 py-1.5 text-sm font-semibold text-[#6b4a35] shadow-[0_8px_20px_rgba(107,74,53,0.16)]">
-              {stepNote ?? missNote}
+              {stepNote}
             </div>
           )}
 

@@ -4,6 +4,13 @@ import type { Scan } from "./scan";
 
 export type HomeRef = { d: string } | { t: string } | { s: Scan };
 
+export function savedHomeRef(layoutId: string | null, scan: Scan | null): HomeRef {
+  if (scan) return { s: scan };
+  if (!layoutId) return { d: "demo2" };
+  if (["demo", "demo2", "xiaoning-apartment"].includes(layoutId)) return { d: layoutId };
+  return { t: layoutId };
+}
+
 // Everything a friend needs to look around; inventory stays private.
 export type VisitCard = { v: 1; host: string; home: HomeRef; decor: Spot[] | null; family: Family };
 

@@ -1,3 +1,4 @@
+import { homeStorage } from "./home-storage";
 export type BatteryEvent = { id: string; label: string; delta: number; at: number };
 export type Battery = { level: number; at: number; log: BatteryEvent[] };
 
@@ -25,14 +26,14 @@ const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
 export function loadBattery(): Battery {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = homeStorage.getItem(KEY);
     if (raw) return JSON.parse(raw) as Battery;
   } catch {}
   return { level: 80, at: Date.now(), log: [] };
 }
 
 export function saveBattery(b: Battery) {
-  localStorage.setItem(KEY, JSON.stringify(b));
+  homeStorage.setItem(KEY, JSON.stringify(b));
 }
 
 export const levelAt = (b: Battery, now: number) => clamp(b.level + ((now - b.at) / 3_600_000) * PER_HOUR);
