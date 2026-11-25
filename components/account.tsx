@@ -1,6 +1,7 @@
 "use client";
 
 import { homeRequest } from "@/lib/home-storage";
+import { accountLabel } from "@/lib/login-id";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
@@ -104,7 +105,7 @@ export function AccountDock({
         <div className="card-pop pointer-events-auto absolute top-full left-0 z-20 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-[#fffaf2]/95 p-4 text-left shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
           {user ? (
             <>
-              <p className="text-sm font-semibold text-[#6b4a35]">{user.email ?? user.name}</p>
+              <p className="text-sm font-semibold text-[#6b4a35]">{accountLabel(user.email) ?? user.name}</p>
               <p className="mt-1 text-xs text-[#8b6b55]">
                 {status === "ok"
                   ? "这座窝已经跟着账号走了，换手机也能打开。"
