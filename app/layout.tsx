@@ -3,6 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "窝窝",
+  appleWebApp: { capable: true, title: "窝窝", statusBarStyle: "default" },
   description: "一座会慢慢长大的马赛克小家",
 };
 
