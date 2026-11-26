@@ -290,6 +290,26 @@ export function Creatures({
   );
   const me = useRef<Group | null>(null);
   const guest = useMemo(() => (visitor ? personParts(visitor.person) : null), [visitor]);
+  const entryWall = home.plan.walls.find(w => w.outer && w.openings?.some(o=>o.kind==="door"));
+  const entryDoor = entryWall?.openings?.find(o=>o.kind==="door");
+  const entry: [number,number] = entryWall && entryDoor
+    ? (entryWall.x0===entryWall.x1 ? [entryWall.x0,(entryDoor.a+entryDoor.b)/2] : [(entryDoor.a+entryDoor.b)/2,entryWall.z0])
+    : [home.width*.55, home.depth-1.6];
+  const arrival = useRef(0);
+  const arm = useRef<Group>(null);
+  const guestPosition = useRef<Group>(null);
+  const greetingGoal = (): Goal | null => visitor && arrival.current<5 && guestPosition.current
+    ? {x:guestPosition.current.position.x,z:guestPosition.current.position.z,spread:.65} : null;
+  useFrame((_,dt)=>{
+    if(!visitor || !me.current || !guestPosition.current) return;
+    arrival.current+=Math.min(dt,.1);
+    const near = me.current.position.distanceTo(guestPosition.current.position)<2;
+    if(arm.current) arm.current.rotation.x = near && arrival.current<5 ? -2.1+.35*Math.sin(arrival.current*11) : 0;
+    if(near && arrival.current<5) {
+      const a=guestPosition.current.position,b=me.current.position;
+      me.current.rotation.y=Math.atan2(b.z-a.z,a.x-b.x);
+    }
+  });
   const charging = nest !== null;
   const nearMe = (): Goal | null =>
     charging && me.current ? { x: me.current.position.x, z: me.current.position.z, spread: 0.7 } : null;
@@ -318,11 +338,17 @@ export function Creatures({
           speed={i === 0 && battery < 50 ? 0.7 : 1.0}
           idle={PERSON_IDLE}
           scale={1.3}
-          goal={i === 0 && nest ? () => ({ ...nest, spread: 0.25 }) : undefined}
+          start={visitor && i===0 ? [entry[0]+(entry[0]<home.width/2?1.8:-1.8),entry[1]+.8] : undefined}
+          goal={visitor && i===0 ? greetingGoal : i === 0 && nest ? () => ({ ...nest, spread: 0.25 }) : undefined}
           curl={[1, 0.74]}
           register={i === 0 ? (g) => (me.current = g) : undefined}
         >
-          <Parts parts={parts} />
+          {visitor && i===0 ? <>
+            <Parts parts={parts.filter((_,index)=>index!==3)}/>
+            <group ref={arm} position={[0,.8,.25]}><mesh position={[0,-.18,0]} castShadow>
+              <boxGeometry args={[.12,.36,.1]}/><meshStandardMaterial color={family.me.shirt}/>
+            </mesh></group>
+          </> : <Parts parts={parts}/>}
           {i === 0 && charging && (
             <Html position={[0, 1.55, 0]} center zIndexRange={[0, 0]} style={{ pointerEvents: "none" }}>
               <div className="charge-bubble">
@@ -338,10 +364,10 @@ export function Creatures({
           speed={1.6}
           idle={PERSON_IDLE}
           scale={1.3}
-          start={[home.width * 0.55, home.depth - 1.6]}
+          start={entry}
           still
           goal={visitor.goal}
-          register={visitor.register}
+          register={g=>{guestPosition.current=g;visitor.register(g);}}
         >
           <Parts parts={guest} />
         </Wanderer>

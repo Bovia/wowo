@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Html, OrbitControls } from "@react-three/drei";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Color, Object3D, type Group, type InstancedMesh } from "three";
-import { NPCS } from "@/lib/town";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Color, Object3D, Vector3, type Group, type InstancedMesh } from "three";
+import { useSearchParams } from "next/navigation";
+import type { OrbitControls as OrbitImpl } from "three-stdlib";
+import { NPCS, XIAONING } from "@/lib/town";
 import { apartmentBuilding } from "@/lib/apartment-building";
 import { XIAONING_VISIT_URL, visitLink } from "@/lib/visit";
 import { Parts, catParts, personParts } from "./creatures";
@@ -45,6 +47,11 @@ function building(w: number, floors: number, wall: string, roof: string, shop = 
     for(const z of [-.4,.12,.64]) a.push(b([w/2+.09,y,z],[.04,1.02,.04],wood));
     a.push(b([w/2+.09,y-.56,.12],[.2,.08,1.22],cream));
     if(f>0) {
+      if (x < 0 && f===1) {
+        a.push(b([x,y-.38,front+.5],[.66,.18,.2],"#ac7661"));
+        for(let i=0;i<5;i++) a.push(b([x-.26+i*.13,y-.23+(i%2)*.035,front+.5],[.16,.19,.18],i%2?"#7e8a66":"#65775e"));
+      }
+      if(x>0) a.push(b([x-.26,y+.21,front+.09],[.16,.52,.012],"#d6b69d"));
       a.push(b([x,y-.48,front+.38],[1.12,.09,.6],"#737774"));
       for(let j=0;j<7;j++) a.push(b([x-.5+j/6,y-.23,front+.66],[.025,.5,.025],metal));
       a.push(b([x,y+.02,front+.66],[1.1,.035,.035],metal));
@@ -81,13 +88,23 @@ function Street() {
     for(let x=-7;x<7;x+=1.6) a.push(b([x,.073,3.55],[.75,.012,.055],"#d6cbb5"));
     for(let i=0;i<7;i++) a.push(b([4.8,.077,2.1+i*.43],[1.35,.015,.21],"#d9d5c6"));
     for(const z of [1.79,5.32]) a.push(b([0,.074,z],[14.8,.012,.045],"#c7b17c"));
+    // Overhead line drapes between poles along the railway.
+    for(const pole of [-21,-14,-7,0,7,14,21]){
+      a.push(b([pole,4.9,-4.95],[.06,2,.06],metal),b([pole,5.85,-4.56],[.06,.06,.8],metal));
+      if(pole===21) continue;
+      const lineHeight=(t:number)=>5.85-.22*4*t*(1-t);
+      for(let j=0;j<8;j++){
+        const left=lineHeight(j/8),right=lineHeight((j+1)/8);
+        a.push(b([pole+(j+.5)*7/8,(left+right)/2,-4.23],[Math.hypot(7/8,right-left),.014,.014],metal,false,[0,0,Math.atan2(right-left,7/8)]));
+      }
+    }
     // Pavement railings.
     for(const x of [-6.7,-4.9,-3.1,-1.3,.5,2.3,6.8]) { a.push(b([x,.53,1.74],[.05,.8,.05],cream)); if(x<2.4) for(const y of [.4,.72]) a.push(b([x+.9,y,1.74],[1.8,.04,.04],cream)); }
     // Raised railway behind the houses, with braced piers and sleepers.
-    a.push(b([0,3.95,-4.25],[15,.24,1.25],"#5a696f"));
-    for(const z of [-4.65,-3.85]) a.push(b([0,4.16,z],[15,.08,.065],"#a1aaa9"));
-    for(let x=-7.4;x<7.5;x+=.3) a.push(b([x,4.09,-4.25],[.09,.075,1.15],"#7e817a"));
-    for(const x of [-6,-1,4]) {
+    a.push(b([0,3.95,-4.25],[44,.24,1.25],"#5a696f"));
+    for(const z of [-4.65,-3.85]) a.push(b([0,4.16,z],[44,.08,.065],"#a1aaa9"));
+    for(let x=-21.9;x<22;x+=.3) a.push(b([x,4.09,-4.25],[.09,.075,1.15],"#7e817a"));
+    for(const x of [-21,-16,-11,-6,-1,4,9,14,19]) {
       for(const z of [-4.7,-3.8]) a.push(b([x,1.95,z],[.24,3.9,.22],"#6f7c80"));
       a.push(b([x+1.3,3,-3.8],[3,.13,.13],"#718084",false,[0,0,.55]));
     }
@@ -99,6 +116,18 @@ function Street() {
     for(const x of [.7,1.4,2.1]) a.push(b([x,.45,.5],[.3,.08,.3],"#9f7758"),b([x,.23,.5],[.06,.44,.06],metal));
     a.push(b([1.4,.75,.1],[2.2,.12,.48],"#a48968"));
     for(const x of [-3.7,-1.1,3.2]) a.push(b([x,.3,.65],[.4,.5,.4],"#a38a70"));
+    // Rain left a few warm reflections under the lamps.
+    for (const x of [-6.18,.03,7.03]) {
+      for (let i=0;i<7;i++) a.push(b([x+Math.sin(i*2)*.11,.073,2+i*.17],
+        [.38-i*.036,.006,.037], i%2 ? "#89817f" : "#98897e"));
+    }
+    // Split cloth curtains and paper lanterns at the supper counter.
+    for(let i=0;i<5;i++) a.push(b([1.18+i*.37,1.52,-.10],[.33,.44+(i%2)*.04,.045],"#596e70"));
+    for(const x of [.68,3.48]) {
+      a.push(b([x,1.72,-.03],[.03,.35,.03],wood),
+        b([x,1.36,-.03],[.26,.46,.24],"#ffd096",true));
+      for(const y of [1.12,1.60]) a.push(b([x,y,-.03],[.23,.045,.22],wood));
+    }
     // Small glowing vending machine.
     a.push(b([6.5,.92,-.2],[.8,1.8,.62],"#819897"),b([6.5,1.16,.12],[.63,1.03,.04],"#d5e6dd",true),b([6.5,.36,.13],[.52,.19,.035],"#3c4b51"));
     for(let i=0;i<9;i++) a.push(b([6.3+(i%3)*.2,.86+Math.floor(i/3)*.27,.16],[.09,.16,.035],["#c28a6b","#9cab82","#c4aa66"][i%3]));
@@ -117,7 +146,7 @@ function Tram({paused}: {paused:boolean}) {
     }
     a.push(b([0,.2,0],[.35,.18,.35],metal)); return a;
   },[]);
-  useFrame((_,dt)=>{if(!paused)t.current+=dt; if(ref.current) ref.current.position.x=Math.sin(t.current*.085)*4.35;});
+  useFrame((_,dt)=>{if(!paused)t.current+=dt; if(ref.current) ref.current.position.x=Math.sin(t.current*.075)*18.8;});
   return <group ref={ref} position={[0,4.25,-4.25]}><Solid items={items}/></group>;
 }
 function Neighbor({cat=false,paused=false,index=0}:{cat?:boolean;paused?:boolean;index?:number}) {
@@ -126,48 +155,138 @@ function Neighbor({cat=false,paused=false,index=0}:{cat?:boolean;paused?:boolean
   useFrame((_,dt)=>{if(!paused)t.current+=dt; const g=ref.current;if(!g)return; const v=t.current*.22; g.position.set(Math.sin(v)*(cat?2.2:4.1),.25,cat ? 1.12:.82);g.rotation.y=Math.cos(v)>0?0:Math.PI;});
   return <group ref={ref} scale={cat?.55:.64}><Parts parts={parts}/></group>;
 }
-function Fit() {
-  const get=useThree(state=>state.get);
-  const size=useThree(state=>state.size);
-  useLayoutEffect(()=>{const camera=get().camera; camera.zoom=Math.min(size.width/22,size.height/17);camera.updateProjectionMatrix();},[get,size]);
-  return null;
+const CENTERS: V[] = [[-4.15,1.5,-1],[-.95,1.5,-1],[2.12,1,-1],[6.15,1.6,-.65]];
+function StreetCamera({focus}: {focus:number|null}) {
+  const controls = useRef<OrbitImpl>(null);
+  const {camera,size} = useThree();
+  const flight = useRef(false);
+  const target = useMemo(() => new Vector3(...(focus === null ? [0,1.6,0] as V : CENTERS[focus])), [focus]);
+  const zoom = Math.min(size.width / (focus === null ? (size.width < 600 ? 15 : 17) : 10), size.height / (focus === null ? 13 : 12));
+  useLayoutEffect(() => { flight.current = true; }, [target, zoom]);
+  const delta = useMemo(() => new Vector3(), []);
+  useFrame((_,dt) => {
+    const orbit = controls.current;
+    if (!orbit || !flight.current) return;
+    const alpha = 1 - Math.exp(-7 * dt);
+    delta.copy(target).sub(orbit.target).multiplyScalar(alpha);
+    orbit.target.add(delta);
+    camera.position.add(delta);
+    camera.zoom += (zoom-camera.zoom)*alpha;
+    camera.updateProjectionMatrix();
+    orbit.update();
+    if (delta.lengthSq()<.000001 && Math.abs(camera.zoom-zoom)<.04) flight.current=false;
+  });
+  return <OrbitControls ref={controls} makeDefault enablePan={false} onStart={()=>{flight.current=false;}}
+    minZoom={8} maxZoom={Math.max(110,zoom*2)} minPolarAngle={.55} maxPolarAngle={1.22} minAzimuthAngle={-.65} maxAzimuthAngle={1.1}/>;
 }
 const APARTMENT = apartmentBuilding(false);
 const HOUSE_A=building(2.9,3,"#987c70","#59676b",true);
 const HOUSE_B=building(2.75,2,"#b4aa94","#68756e",true);
 const CAFE=building(2.8,1,"#a18569","#606b6e",false);
-function Scene({paused,onSelect}:{paused:boolean;onSelect:(id:number)=>void}) {
+function Scene({paused,onSelect,focus,windows}:{paused:boolean;onSelect:(id:number)=>void;focus:number|null;windows:Brick[]}) {
   return <>
-    <color attach="background" args={["#c2c5ca"]}/><fog attach="fog" args={["#c2c5ca",32,65]}/>
-    <ambientLight intensity={.8} color="#d3def2"/><hemisphereLight args={["#c0cce5","#b3a28e",1.25]}/>
-    <directionalLight castShadow position={[-7,12,6]} intensity={2.1} color="#ffe0bb" shadow-mapSize={[2048,2048]} shadow-camera-left={-12} shadow-camera-right={12} shadow-camera-top={12} shadow-camera-bottom={-12} shadow-normalBias={.04}/>
+    <fog attach="fog" args={["#ddbbc1",32,63]}/>
+    <ambientLight intensity={.65} color="#bfccf3"/><hemisphereLight args={["#c0cce5","#b3a28e",1.25]}/>
+    <directionalLight castShadow position={[-9,8,5]} intensity={2.6} color="#ffcf9a" shadow-mapSize={[2048,2048]} shadow-camera-left={-12} shadow-camera-right={12} shadow-camera-top={12} shadow-camera-bottom={-12} shadow-normalBias={.04}/>
     <group position={[0,-.1,0]}>
       <Street/>
       {[{p:[-4.15,0,-1.65] as V,items:HOUSE_A,label:"小林的家",id:0},{p:[-.95,0,-1.65] as V,items:HOUSE_B,label:"阿禾的家",id:1},{p:[2.12,0,-1.65] as V,items:CAFE,label:"晚风食堂",id:2}].map(({p,items,label,id})=><group key={label} position={p} onClick={e=>{if(e.delta<6){e.stopPropagation();onSelect(id);}}} onPointerOver={()=>{document.body.style.cursor="pointer";}} onPointerOut={()=>{document.body.style.cursor="auto";}}>
-        <Solid items={items}/><Html position={[0,id===2?1.85:1.8,1.38]} transform distanceFactor={7}><button className="wowo-corner-sign" onClick={()=>onSelect(id)}>{id===2?"晚 风 食 堂":label}</button></Html>
+        <Solid items={items}/>{id===2 && <Html position={[0,1.85,1.38]} transform distanceFactor={7}><button className="wowo-corner-sign" onClick={()=>onSelect(id)}>{id===2?"晚 风 食 堂":label}</button></Html>}
         <pointLight position={[0,.9,1.7]} color="#ffb769" intensity={7} distance={3.3}/>
       </group>)}
-      <group position={[5.7,.04,-1.95]} scale={.45}
-        onClick={event => { if (event.delta < 6) { event.stopPropagation(); location.assign(XIAONING_VISIT_URL); } }}>
+      <group position={[6.15,.04,-1.95]} scale={[.74,1.85,.76]}
+        onClick={event => { if (event.delta < 6) { event.stopPropagation(); onSelect(3); } }}>
         <Solid items={APARTMENT}/>
-        <Html position={[0,4.2,2.1]} center zIndexRange={[20,0]}>
-          <a className="apartment-door" style={{whiteSpace:"nowrap"}} href={XIAONING_VISIT_URL}>小宁的家 ↗</a>
-        </Html>
+        {windows.length > 0 && <Solid items={windows}/>}
       </group>
       <Tram paused={paused}/><Neighbor paused={paused}/><Neighbor paused={paused} index={1}/><Neighbor paused={paused} cat/>
     </group>
     <ContactShadows position={[0,-.46,0]} opacity={.32} scale={35} blur={2.8} far={12} resolution={512} frames={1}/>
-    <OrbitControls makeDefault target={[0,1.2,0]} enablePan={false} minZoom={10} maxZoom={110} minPolarAngle={.55} maxPolarAngle={1.22} minAzimuthAngle={-.65} maxAzimuthAngle={1.1}/><Fit/>
+    <StreetCamera focus={focus}/>
   </>;
 }
+type Door = {handle:string; host:string; building:number; local?:boolean};
+const LOCAL_DOORS:Door[] = [...NPCS,XIAONING].map((n,i)=>({handle:n.handle,host:n.host,building:i===2?3:i,local:true}));
+const buildingNames = ["小林家","阿禾家","晚风食堂","晚风公寓"];
+function doorKey(d:Door) { return (d.local?"local:":"resident:")+d.handle; }
+
 export default function TownCorner() {
-  const [selected,setSelected]=useState<number|null>(null);const [paused,setPaused]=useState(false);const [version,setVersion]=useState(0);const [busy,setBusy]=useState(false);const [error,setError]=useState(false);
-  async function visit(id:number) {setBusy(true);setError(false);try {const n=NPCS[id];const url=await visitLink({v:1,host:n.host,home:n.home,decor:n.decor,family:n.family});location.href=url.replace('/#','/?from=town#');}catch{setError(true);setBusy(false);}}
-  return <main className="wowo-corner-page">
-    <Canvas key={version} orthographic shadows dpr={[1,1.75]} camera={{position:[13,11,17],zoom:45,near:.1,far:100}} gl={{antialias:true}}><Scene paused={paused} onSelect={setSelected}/></Canvas>
-    <header className="wowo-corner-header"><Link href="/town" className="wowo-corner-brand">窝窝<span>镇</span></Link><div className="wowo-corner-weather"><span/> 黄昏 · 晚风街</div><nav className="wowo-corner-nav"><Link className="wowo-corner-home" href="/town?neighbors=1">镇上邻居</Link><Link className="wowo-corner-home" href="/town/apartment">公寓楼下</Link><Link className="wowo-corner-home" href="/home">回我的家 ↗</Link></nav></header>
-    <section className="wowo-corner-intro"><div className="wowo-corner-eyebrow">WOWO · A LITTLE NEIGHBORHOOD</div><h1>晚风刚好，<br/>在街角待一会。</h1><p>灯亮了，邻居也回来了。</p></section>
-    {selected!==null && <aside className="wowo-corner-card"><button className="wowo-corner-close" aria-label="关闭" onClick={()=>setSelected(null)}>×</button><div className="wowo-corner-eyebrow">{selected===2 ? "街角小店":"邻居的窝"}</div><h2>{selected===2?"晚风食堂":`${NPCS[selected].host}的家`}</h2><p>{selected===2?"今晚的灯，先为路过的人亮着。小店暂时还不能进去。":"门前留着一盏灯，进来坐坐吧。"}</p>{selected<2&&<button className="wowo-corner-visit" disabled={busy} onClick={()=>visit(selected)}>{busy?"正在开门…":"去串门 →"}</button>}{error&&<p>开门失败，请重试。</p>}</aside>}
-    <footer className="wowo-corner-footer"><div><span className="wowo-corner-dot"/> 一小块正在生长的日常<span className="wowo-corner-hint">拖动看看街角 · 滚轮或双指缩放 · 点房子串门</span></div><div className="wowo-corner-controls"><button aria-label={paused?"继续街景动画":"暂停街景动画"} onClick={()=>setPaused(!paused)}>{paused?"▷ 继续":"Ⅱ 停一会"}</button><button onClick={()=>setVersion(version+1)}>↺ 初始视角</button></div></footer>
+  const query = useSearchParams();
+  const at = query.get("at");
+  const building = query.get("building");
+  const initial = building === "xiaolin" ? 0 : building === "ahe" ? 1 : building === "apartment" || at ? 3 : null;
+  const [focus,setFocus] = useState<number|null>(initial);
+  const [list,setList] = useState(query.has("neighbors") || !!at);
+  const [choice,setChoice] = useState<Door|null>(initial===0 || initial===1 ? LOCAL_DOORS[initial] : null);
+  const [residents,setResidents] = useState<Door[]>([]);
+  const [status,setStatus] = useState<"loading"|"ready"|"error">("loading");
+  const [attempt,setAttempt] = useState(0);
+  const [filter,setFilter] = useState("");
+  const [busy,setBusy] = useState(false);
+  const [failed,setFailed] = useState(false);
+  const [paused,setPaused] = useState(false);
+  const [version,setVersion] = useState(0);
+  useEffect(()=>{
+    const controller=new AbortController();
+    fetch("/api/town",{cache:"no-store",signal:controller.signal}).then(async r=>{
+      if(!r.ok) throw new Error();
+      const data=await r.json() as {homes:Pick<Door,"host"|"handle">[]};
+      const rows=data.homes.map(n=>({...n,building:3}));
+      setResidents(rows);setStatus("ready");
+      if(at){ const found=rows.find(n=>n.handle===at) ?? LOCAL_DOORS.find(n=>n.handle===at);
+        if(found){setChoice(found);setFocus(found.building);setList(false);} }
+    }).catch(()=>{if(!controller.signal.aborted)setStatus("error");});
+    return ()=>controller.abort();
+  },[at,attempt]);
+  const windows=useMemo(()=>{
+    const lit=new Map<number,Brick>();
+    for(const resident of residents){
+      const slot=Array.from(resident.handle).reduce((v,c)=>(v*31+c.charCodeAt(0))>>>0,0)%168;
+      lit.set(slot,b([-2.2+(slot%7)*.73,.7+Math.floor(slot/7)*.49+.26,1.875],[.44,.28,.025],"#f8c679",true));
+    }
+    return [...lit.values()];
+  },[residents]);
+  function select(id:number) {
+    setFocus(id);setList(false);setFailed(false);setFilter("");
+    setChoice(id<2?LOCAL_DOORS[id]:null);
+  }
+  function overview(){setList(false);setChoice(null);setFocus(null);setFailed(false);setFilter("");}
+  async function knock(d:Door) {
+    if(busy) return;
+    setBusy(true);setFailed(false);
+    try {
+      let url = "/@"+encodeURIComponent(d.handle)+"?from=town";
+      if(d.local && d.building===3) url=XIAONING_VISIT_URL;
+      else if(d.local){const n=NPCS[d.building];url=(await visitLink({v:1,host:n.host,home:n.home,decor:n.decor,family:n.family})).replace("/#","/?from=town&street="+n.handle+"#");}
+      await new Promise(resolve=>window.setTimeout(resolve,850));
+      location.assign(url);
+    }catch{setBusy(false);setFailed(true);}
+  }
+  const showDoors = list || (focus===3 && !choice);
+  const doors=[...LOCAL_DOORS,...residents].filter(d=>(list || d.building===3) && (d.host+" "+d.handle).toLowerCase().includes(filter.trim().toLowerCase()));
+  return <main className="wowo-corner-page evening-street">
+    <Canvas key={version} orthographic shadows dpr={[1,1.65]} camera={{position:[12,10,18],zoom:42,near:.1,far:100}} gl={{alpha:true,antialias:true}}>
+      <Scene paused={paused} onSelect={select} focus={focus} windows={windows}/>
+    </Canvas>
+    <header className="wowo-corner-header"><button className="wowo-corner-brand" onClick={overview}>窝窝<span>镇</span></button>
+      <nav className="wowo-corner-nav"><button className="wowo-corner-home" onClick={()=>{setList(true);setChoice(null);setFilter("");}}>找邻居</button><Link className="wowo-corner-home" href="/home">回我的家 ↗</Link></nav></header>
+    <section className="street-title"><h1>晚风街</h1><p>拖动环看，点房子串门</p></section>
+    {(list || focus!==null) && <aside className="street-directory" aria-label="街坊门牌">
+      <button className="wowo-corner-close" aria-label="收起门牌" onClick={overview}>×</button>
+      <h2>{list?"找邻居":choice?choice.host+"的家":buildingNames[focus!]}</h2>
+      {showDoors && <><input aria-label="搜索邻居" placeholder="名字或门牌号" value={filter} onChange={e=>setFilter(e.target.value)}/>
+        <div className="street-doors">{doors.map(d=><button key={doorKey(d)} onClick={()=>{setChoice(d);setFocus(d.building);setList(false);setFailed(false);}}>
+          <strong>{d.host}</strong><small>{d.local?buildingNames[d.building]:"晚风公寓 · @"+d.handle}</small><span>›</span></button>)}</div>
+        {status==="loading" && <p>正在读取公开门牌…</p>}
+        {status==="error" && <button onClick={()=>{setStatus("loading");setAttempt(n=>n+1);}}>公开门牌加载失败，重试</button>}
+        {status==="ready" && !doors.length && <p>没有找到这位邻居。</p>}
+      </>}
+      {choice && !list && <><p>{buildingNames[choice.building]} · @{choice.handle}</p>
+        <button className="wowo-corner-visit" onClick={()=>knock(choice)} disabled={busy}>敲门拜访</button></>}
+      {!list && focus===2 && <p>街角的食堂，暂未开放。</p>}
+      {failed && <p role="alert">没能打开门牌，请重试。</p>}
+    </aside>}
+    <footer className="wowo-corner-footer"><span>黄昏 · 高架电车</span><div className="wowo-corner-controls"><button onClick={()=>setPaused(!paused)}>{paused?"继续街景":"暂停街景"}</button><button onClick={()=>{overview();setVersion(n=>n+1);}}>全街视角</button></div></footer>
+    {busy && <div className="street-knock" role="status"><div><i/><strong>叩、叩</strong><p>正在等{choice?.host}开门</p></div></div>}
   </main>;
 }

@@ -136,7 +136,7 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
       if (!active) return;
       if (card && resolveHome(card.home)) {
         setVisit(card);
-        setIntroMode("full");
+        setIntroMode("short");
         setPhase("intro");
         setIntroRun((n) => n + 1);
       } else {
@@ -152,7 +152,9 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
   const fromTown = fromDistrict === "town" || fromDistrict === "apartment";
   const router = useRouter();
   const goHome = () => {
-    router.push(fromDistrict === "apartment" ? "/town/apartment" : "/town");
+    const street = new URLSearchParams(location.search).get("street");
+    if (street === "xiaolin" || street === "ahe") router.push("/town?building=" + street);
+    else router.push(fromTown ? "/town?building=apartment" : "/town");
   };
 
   const sendWalk = (x: number, z: number) => {
@@ -608,7 +610,7 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
                 </div>
               ) : (
               <div className="flex rounded-full bg-white/70 p-1 text-sm shadow-sm backdrop-blur">
-                <Link href="/town" className="whitespace-nowrap rounded-full px-3 py-1 text-[#6b4a35]">出门 ↗</Link>
+                <Link href="/town?building=apartment" className="whitespace-nowrap rounded-full px-3 py-1 text-[#6b4a35]">出门 ↗</Link>
               </div>
               )}
             </header>

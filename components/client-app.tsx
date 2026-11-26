@@ -1,11 +1,12 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import { HomeScene } from "./home-scene";
 import { useSyncExternalStore } from "react";
 import { hasVisit } from "@/lib/visit";
+import { authClient } from "@/lib/auth/client";
+import { HomeEntry } from "./home-entry";
 import { TownApp } from "./town-app";
 
-export const HomeScene = dynamic(() => import("./wowo"), { ssr: false });
 
 function subscribe(callback: () => void) {
   window.addEventListener("hashchange", callback);
@@ -16,7 +17,13 @@ function subscribe(callback: () => void) {
   };
 }
 
+function Landing() {
+  const session = authClient.useSession();
+  if (session.isPending) return <div className="wowo-bg h-dvh"/>;
+  return session.data?.user ? <HomeEntry/> : <TownApp/>;
+}
+
 export function ClientApp() {
   const visiting = useSyncExternalStore(subscribe, hasVisit, () => false);
-  return visiting ? <HomeScene/> : <TownApp/>;
+  return visiting ? <HomeScene/> : <Landing/>;
 }

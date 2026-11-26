@@ -8,7 +8,7 @@ import { loadInventory, saveInventory } from "@/lib/inventory";
 import { merge, type CloudItem } from "@/lib/items-sync";
 import { saveAlbum, type Snap } from "@/lib/polaroid";
 import { HomeLogin } from "./home-login";
-import { HomeScene } from "./client-app";
+import { HomeScene } from "./home-scene";
 
 function EntryCard({title, children}: {title: string; children?: ReactNode}) {
   return (
