@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { authClient } from "@/lib/auth/client";
-import { homeRequest, selectHomeOwner } from "@/lib/home-storage";
+import { homeRequest, selectHomeInstance, selectHomeOwner } from "@/lib/home-storage";
 import { writeLocal, type HomePayload } from "@/lib/snapshot";
 import { loadInventory, saveInventory } from "@/lib/inventory";
 import { merge, type CloudItem } from "@/lib/items-sync";
@@ -33,9 +33,10 @@ function AccountHome({id}: {id: string}) {
       try {
         const res = await homeRequest("/api/home", {signal: controller.signal});
         if (!res.ok) throw new Error("load-home");
-        const { home, handle } = await res.json() as {home: HomePayload | null; handle?: string};
+        const { home, handle, instance } = await res.json() as {home: HomePayload | null; handle?: string; instance: string};
         if (controller.signal.aborted) return;
         if (!home) { setState("empty"); return; }
+        selectHomeInstance(instance);
         const [photosRes, itemsRes] = await Promise.all([
           homeRequest("/api/photos", {signal: controller.signal}),
           homeRequest("/api/items", {signal: controller.signal}),

@@ -72,7 +72,6 @@ function safeLayout(scan: Scan | null) {
   }
 }
 
-type View = string;
 
 const CAPTIONS: Record<string, string> = {
   demo: "这是别人家的样板间。点点房间看看。",
@@ -95,7 +94,6 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
   const [skipTick, setSkipTick] = useState(0);
   const [phase, setPhase] = useState<"intro" | "home">("intro");
   const [mineId, setMineId] = useState<string | null>(() => homeStorage.getItem(MINE_KEY));
-  const [view, setView] = useState<View>(() => loadScan() || (mineId && mineId !== DEMOS[0].id) ? "mine" : DEMOS[0].id);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -114,9 +112,8 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
   // 串门没敲开：等开场放完再说，不然看不见
   const [missNote, setMissNote] = useState<string | null>(null);
   const [visitor] = useState(() => (hasFamily() ? loadFamily().me : GUEST));
-  const homeLayout = (view === "mine" && mine) || DEMOS.find((d) => d.id === view) || DEMOS[0];
+  const homeLayout = mine ?? DEMOS[0];
   const layout = visitLayout ?? homeLayout;
-  const views = [...DEMOS.map((d) => ({ id: d.id, name: d.name })), ...(mine ? [{ id: "mine", name: "我的窝" }] : [])];
   const interactive = phase === "home";
   const [touch] = useState(() => window.matchMedia("(pointer: coarse)").matches);
 
@@ -179,7 +176,6 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
   };
 
   const showMine = () => {
-    setView("mine");
     setSelected(null);
     setHovered(null);
     setUploadOpen(false);
@@ -197,15 +193,6 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
     homeStorage.setItem(SCAN_KEY, JSON.stringify(s));
     setScan(s);
     showMine();
-  };
-
-  const switchView = (v: View) => {
-    setView(v);
-    setFollow(null);
-    setDecorating(false);
-    setPicked(null);
-    setSelected(null);
-    setHovered(null);
   };
 
   const [inventory, setInventory] = useState<Inventory>(loadInventory);
@@ -420,7 +407,7 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
         stamp: stampFor(hour),
         caption: captionFor({
           hour,
-          home: visiting ? `${visit.host}的窝` : layout.demo ? layout.name : "我的窝",
+          home: visiting ? `${visit.host}的窝` : "我的家",
           cat: follow !== null ? catNames[follow] : undefined,
           room: selectedRoom?.name,
           running,
@@ -459,7 +446,7 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
   const shareCard = (host: string): VisitCard => ({
     v: 1,
     host,
-    home: savedHomeRef(homeLayout.id, view === "mine" ? scan : null),
+    home: savedHomeRef(homeLayout.id, scan),
     decor: homeFurniture ? toSpots(homeFurniture) : null,
     family,
   });
@@ -621,17 +608,6 @@ export default function Wowo({ owner = false, initialHandle = null }: { owner?: 
                 </div>
               ) : (
               <div className="flex rounded-full bg-white/70 p-1 text-sm shadow-sm backdrop-blur">
-                {views.map((v) => (
-                  <button
-                    key={v.id}
-                    onClick={() => switchView(v.id)}
-                    className={`rounded-full px-3 py-1 transition ${
-                      layout.id === (v.id === "mine" ? mine?.id : v.id) ? "bg-[#6b4a35] text-white" : "text-[#8b6b55]"
-                    }`}
-                  >
-                    {v.name}
-                  </button>
-                ))}
                 <Link href="/town" className="whitespace-nowrap rounded-full px-3 py-1 text-[#6b4a35]">出门 ↗</Link>
               </div>
               )}

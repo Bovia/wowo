@@ -66,6 +66,8 @@ export async function POST(request: Request) {
       id text, room text, name text, count int, note text, color text, warn boolean, category text, price numeric,
       "boughtAt" text, source text, extra jsonb, "updatedAt" bigint, deleted boolean
     )
+    cross join (select user_id from homes where user_id = ${user.id}
+      and coalesce(instance_id::text, 'original') = ${request.headers.get("x-wowo-home") ?? "original"} for key share) active_home
     on conflict (user_id, id) do update set
       room = excluded.room, name = excluded.name, count = excluded.count, note = excluded.note, color = excluded.color,
       warn = excluded.warn, category = excluded.category, price = excluded.price, bought_at = excluded.bought_at,

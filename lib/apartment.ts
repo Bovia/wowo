@@ -5,6 +5,7 @@ import type { Layout, Opening, Placement, WallSpec } from "./home";
 // Millimetres in the supplied plan / 800. Dimensions follow wall centre lines;
 // the plan does not dimension the interior split or bay depth, so those are estimates.
 const u = (mm: number) => mm / 800;
+const bayHeight = u(500);
 const W = u(3015), BAL = u(1445), SECOND = u(4920), BATH = u(6637);
 const KITCHEN = u(9620), MASTER = u(11892), END = u(14720), SPLIT = u(1040);
 const wall = (x0:number,z0:number,x1:number,z1:number,room:string,outer:boolean,openings?:Opening[]): WallSpec => ({x0,z0,x1,z1,room,outer,openings});
@@ -33,7 +34,7 @@ function balconySlider(): Piece {
     boxes.push([offset, .04, z, offset + 1.15, 2.05, z + .025, "#b8ceca"]);
     for (const x of [offset, offset + 1.12])
       boxes.push([x, 0, z, x + .045, 2.1, z + .055, frame]);
-    for (const y of [.03, 1.02, 2.04])
+    for (const y of [.03, 2.04])
       boxes.push([offset, y, z, offset + 1.16, y + .045, z + .055, frame]);
   }
   return fitting(1.31, .13, boxes);
@@ -97,6 +98,14 @@ const desk = fitting(1.02, .52, [
   ...[.05,.91].flatMap(x => [.04,.41].map((z): LBox => [x,0,z,x+.06,.78,z+.06,"#886c54"])),
   [.15,.86,.1,.43,.9,.32,"#d9c5ae"],
 ]);
+const sinkStart = KITCHEN + .15;
+const kitchenWindow = { a: KITCHEN + .85, b: KITCHEN + 1.6 };
+const sinkCounter = counter(1.65, { sink: true, stove: false });
+// Leave the tiles beside the opening and a clear reveal around its frame.
+sinkCounter.boxes = sinkCounter.boxes.filter(([x0,y0,z0,x1,,z1]) => {
+  const tile = z0 === 0 && z1 === .03 && y0 >= .93;
+  return !tile || sinkStart + x1 <= kitchenWindow.a - .04 || sinkStart + x0 >= kitchenWindow.b + .04;
+});
 const hob = counter(2.08, {sink:false, stove:false});
 // Keep the cabinet and backsplash, leaving its work surface clear for a twin hob.
 hob.boxes = hob.boxes.filter(box => box[1] < .93 || box[5] <= .03);
@@ -127,7 +136,7 @@ const source = {
       {room:"living",x0:0,z0:SECOND,x1:SPLIT,z1:BATH},
       {room:"bathroom",x0:SPLIT,z0:SECOND,x1:W,z1:BATH},
       {room:"living",x0:0,z0:BATH,x1:W,z1:KITCHEN},
-      {room:"living",x0:W,z0:u(7200),x1:W+.55,z1:u(8800),elev:u(1000), slabColor:"#f0eadc"},
+      {room:"living",x0:W,z0:u(7200),x1:W+.55,z1:u(8800),elev:bayHeight, slabColor:"#f0eadc"},
       {room:"entry",x0:0,z0:KITCHEN,x1:SPLIT,z1:MASTER},
       {room:"kitchen",x0:SPLIT,z0:KITCHEN,x1:W,z1:MASTER},
       {room:"master",x0:0,z0:MASTER,x1:W,z1:END},
@@ -141,18 +150,18 @@ const source = {
       wall(0,SECOND,W,SECOND,"second",false,[{a:.15,b:1.2,kind:"door"}]),
       wall(SPLIT,SECOND,SPLIT,BATH,"bathroom",false,[{a:SECOND+.72,b:SECOND+1.62,kind:"door"}]),
       wall(SPLIT,BATH,W,BATH,"bathroom",false),
-      wall(W,SECOND,W,BATH,"bathroom",true,[{a:SECOND+.45,b:SECOND+1.2,kind:"window",sill:1.35,top:2.1}]),
+      wall(W,SECOND,W,BATH,"bathroom",true,[{a:SECOND+.45,b:SECOND+1.2,kind:"window", twoPane:true,sill:1.35,top:2.1}]),
       wall(W,BATH,W,u(7200),"living",true),
       wall(W,u(8800),W,KITCHEN,"living",true),
-      wall(W,u(7200),W+.55,u(7200),"living",true,[{a:W+.1,b:W+.5,kind:"window",sill:u(1000)+.1,top:2.2}]),
-      wall(W+.55,u(7200),W+.55,u(8800),"living",true,[{a:u(7200)+.1,b:u(8800)-.1,kind:"window",sill:u(1000)+.1,top:2.2}]),
-      wall(W,u(8800),W+.55,u(8800),"living",true,[{a:W+.1,b:W+.5,kind:"window",sill:u(1000)+.1,top:2.2}]),
+      wall(W,u(7200),W+.55,u(7200),"living",true,[{a:W+.1,b:W+.5,kind:"window", twoPane:true,sill:bayHeight+.1,top:2.2}]),
+      wall(W+.55,u(7200),W+.55,u(8800),"living",true,[{a:u(7200)+.1,b:u(8800)-.1,kind:"window", twoPane:true,sill:bayHeight+.1,top:2.2}]),
+      wall(W,u(8800),W+.55,u(8800),"living",true,[{a:W+.1,b:W+.5,kind:"window", twoPane:true,sill:bayHeight+.1,top:2.2}]),
       wall(SPLIT,KITCHEN,W,KITCHEN,"kitchen",false),
       wall(SPLIT,KITCHEN,SPLIT,MASTER,"kitchen",false,[{a:KITCHEN+.38,b:MASTER-.25,kind:"door"}]),
-      wall(W,KITCHEN,W,MASTER,"kitchen",true,[{a:KITCHEN+.85,b:KITCHEN+1.6,kind:"window",sill:1.15,top:2.1}]),
+      wall(W,KITCHEN,W,MASTER,"kitchen",true,[{...kitchenWindow,kind:"window", twoPane:true,sill:1.15,top:2.1}]),
       wall(0,MASTER,W,MASTER,"master",false,[{a:.15,b:1.2,kind:"door"}]),
       wall(W,MASTER,W,END,"master",true),
-      wall(0,END,W,END,"master",true,[{a:W/2-.52,b:W/2+.52,kind:"window",sill:.9,top:2.1}]),
+      wall(0,END,W,END,"master",true,[{a:W/2-.52,b:W/2+.52,kind:"window", twoPane:true,sill:.9,top:2.1}]),
     ],
     furniture: [
       put(balconyRail(W),"balcony",0,0),
@@ -173,7 +182,7 @@ const source = {
       put(balconySlider(),"kitchen",SPLIT+.1,KITCHEN+.12,"w"),
       put(shoeCabinet(.85),"entry",.1,KITCHEN+.15,"w"),
       put(doormat,"entry",.15,u(10650),"w"),
-      put(counter(1.65,{sink:true,stove:false}),"kitchen",W-.72,KITCHEN+.15,"e"),
+      put(sinkCounter,"kitchen",W-.72,sinkStart,"e"),
       put(hob,"kitchen",W-2.23,MASTER-.74,"s"),
       put(fridge,"kitchen",SPLIT+.36,KITCHEN+.2),
       put(tatami(1.9,2.5),"master",W-2.65,END-2.05,"e"),

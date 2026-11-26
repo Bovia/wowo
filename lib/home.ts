@@ -16,7 +16,7 @@ export type Room = {
 export type Side = "n" | "s" | "w" | "e";
 
 // a/b are absolute coordinates along the wall's axis; leaf is the side (across the wall) an open door swings to.
-export type Opening = { a: number; b: number; kind: "door" | "window"; sill?: number; top?: number; leaf?: "+" | "-" };
+export type Opening = { a: number; b: number; kind: "door" | "window"; sill?: number; twoPane?: boolean; top?: number; leaf?: "+" | "-" };
 
 export type WallSpec = {
   x0: number;
@@ -275,11 +275,19 @@ function renderWall(b: Builder, g: WallGeom, start: number, end: number) {
     }
     const { y0, y1 } = o;
     const tall = y1 - y0 > 1.4;
-    across(o.a, o.b, y0, y1, -0.02, 0.02, "#bfe0ee", 0.02);
+    if (o.twoPane) {
+      const mid = (o.a + o.b) / 2;
+      across(o.a, mid, y0, y1, -.025, 0, "#bfe0ee", 0);
+      across(mid, o.b, y0, y1, 0, .025, "#bfe0ee", 0);
+      across(mid - .012, mid + .012, y0, y1, -.03, .03, "#fbf7ef");
+    } else {
+      across(o.a, o.b, y0, y1, -0.02, 0.02, "#bfe0ee", 0.02);
+    }
     across(o.a - 0.04, o.b + 0.04, y0 - 0.05, y0, -T / 2 - 0.06, T / 2 + 0.06, "#fbf7ef");
     across(o.a, o.b, y1 - 0.04, y1, -T / 2 - 0.01, T / 2 + 0.01, "#fbf7ef");
     across(o.a, o.a + 0.04, y0, y1, -T / 2, T / 2, "#fbf7ef");
     across(o.b - 0.04, o.b, y0, y1, -T / 2, T / 2, "#fbf7ef");
+    if (o.twoPane) continue;
     const panes = Math.max(2, Math.round((o.b - o.a) / 0.6));
     for (let k = 1; k < panes; k++) {
       const m = o.a + ((o.b - o.a) * k) / panes;

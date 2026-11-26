@@ -1,6 +1,6 @@
 "use client";
 
-import { homeRequest } from "@/lib/home-storage";
+import { clearHomeCache, homeRequest } from "@/lib/home-storage";
 import { accountLabel } from "@/lib/login-id";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -61,6 +61,22 @@ export function AccountDock({
   const user = session.data?.user ?? null;
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>("ok");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
+  async function deleteHome() {
+    if (!window.confirm("删除我的家？户型、家具、屋内物品和相册记录将被清除。账号和门牌会保留。")) return;
+    setDeleting(true);
+    setDeleteError(false);
+    try {
+      const response = await homeRequest("/api/home", { method: "DELETE" });
+      if (!response.ok) throw new Error("delete-home");
+      clearHomeCache();
+      location.replace("/home");
+    } catch {
+      setDeleting(false);
+      setDeleteError(true);
+    }
+  }
   const savedKey = useRef(dirtyKey);
   const latest = useRef({collect, inventory, onHandle});
   const embed = isEmbed();
@@ -99,7 +115,7 @@ export function AccountDock({
           user ? "bg-white/75 text-[#6b4a35] hover:bg-white" : "bg-[#6b4a35] text-white hover:bg-[#5a3d2c]"
         }`}
       >
-        {user ? (status === "pushing" || status === "pulling" ? "同步中" : "云上的窝") : "存到云上"}
+        我的家
       </button>
       {open && (
         <div className="card-pop pointer-events-auto absolute top-full left-0 z-20 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-[#fffaf2]/95 p-4 text-left shadow-[0_10px_30px_rgba(107,74,53,0.18)] backdrop-blur">
@@ -115,6 +131,10 @@ export function AccountDock({
               </p>
               {handle && <HandleRow handle={handle} onChange={onHandle} />}
               {handle && <TownSwitch />}
+              <button onClick={deleteHome} disabled={deleting} className="mt-3 block text-xs text-red-700">
+                {deleting ? "正在删除…" : "删除这个家"}
+              </button>
+              {deleteError && <p role="alert" className="text-xs">删除失败，请刷新后重试。</p>}
               <button
                 onClick={signOut}
                 className="mt-3 rounded-full bg-[#f6ecdf] px-3 py-1.5 text-xs font-semibold text-[#8b6b55] hover:bg-[#efe1cc]"

@@ -429,7 +429,7 @@ export default function Town() {
       </div>
 
       <p className="ink-soft pointer-events-none absolute inset-x-0 bottom-[max(1.25rem,env(safe-area-inset-bottom))] px-6 text-center text-xs text-[#8b6b55]/70">
-        {going ? `正在去${going}家…` : "拖动看看 · 双指或右键拖着挪 · 想让你家也在这？在「云上的窝」里打开「上小镇」"}
+        {going ? `正在去${going}家…` : "拖动看看 · 双指或右键拖着挪 · 想让你家也在这？在「我的家」里打开「上小镇」"}
       </p>
     </div>
   );

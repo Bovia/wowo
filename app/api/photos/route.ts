@@ -51,8 +51,10 @@ export async function POST(request: Request) {
   const at = body.at ?? Date.now();
   await sql()`
     insert into photos (id, user_id, blob_url, caption, stamp, at)
-    values (${body.id}, ${user.id}::uuid, ${url}, ${body.caption ?? ""}, ${body.stamp ?? ""}, ${at})
-    on conflict (id) do update set blob_url = excluded.blob_url, caption = excluded.caption, stamp = excluded.stamp
+    select ${body.id}, h.user_id, ${url}, ${body.caption ?? ""}, ${body.stamp ?? ""}, ${at}
+    from (select user_id from homes where user_id = ${user.id} and coalesce(instance_id::text, 'original') =
+      ${request.headers.get("x-wowo-home") ?? "original"} for key share) h
+    on conflict (id) do update set blob_url = excluded.blob_url, caption = excluded.caption, stamp = excluded.stamp where photos.user_id = excluded.user_id
   `;
   const extra = await sql()`
     select id from photos where user_id = ${user.id} order by at desc offset ${MAX}
